@@ -657,14 +657,16 @@ export default function MozosAdminView() {
       `}</style>
 
       {/* HEADER DE ADMINISTRACIÓN */}
-      <header className="no-print bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 shadow-sm">
+      <header className="no-print bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-ocean-600 text-white flex items-center justify-center font-bold">
-            🌊
-          </div>
+          <img
+            src="/logo.jpg"
+            alt="Sin Espinas"
+            className="w-11 h-11 rounded-2xl object-cover border border-ocean-200 shadow-sm"
+          />
           <div>
-            <h1 className="text-lg font-black text-slate-900 tracking-tight leading-none">
-              Cevichería Del Mar — Panel Integral
+            <h1 className="text-lg font-black text-slate-900 tracking-tight leading-none uppercase">
+              SIN ESPINAS — Panel Integral
             </h1>
             <p className="text-xs text-slate-500 mt-1">
               Usuario: <strong className="text-slate-800">{usuario?.nombres}</strong> ({usuario?.rol})
@@ -1908,7 +1910,7 @@ export default function MozosAdminView() {
             </div>
 
             <div className="border-2 border-dashed border-ocean-300 rounded-2xl p-6 text-center bg-slate-50 mb-5">
-              <span className="text-xs font-bold text-ocean-600 uppercase tracking-widest block mb-1">Cevichería Del Mar</span>
+              <span className="text-xs font-black text-ocean-800 uppercase tracking-widest block mb-1">CEVICHERÍA SIN ESPINAS</span>
               <h2 className="text-2xl font-black text-slate-900 mb-1">
                 {impresionModal.modoTodos ? 'Todas las Mesas' : `MESA ${impresionModal.mesa?.numero_mesa}`}
               </h2>
@@ -1953,7 +1955,7 @@ export default function MozosAdminView() {
           {(impresionModal.modoTodos ? mesas : (impresionModal.mesa ? [impresionModal.mesa] : [])).map(m => (
             <div key={m.id_mesa} className="border-4 border-slate-900 rounded-3xl p-8 text-center flex flex-col items-center justify-between min-h-[360px]">
               <div>
-                <span className="text-sm font-extrabold text-slate-600 uppercase tracking-widest block">CEVICHERÍA DEL MAR</span>
+                <span className="text-sm font-black text-slate-800 uppercase tracking-widest block">CEVICHERÍA SIN ESPINAS</span>
                 <h1 className="text-4xl font-black text-slate-950 mt-1 mb-1">MESA {m.numero_mesa}</h1>
                 <span className="text-xs font-semibold text-slate-500">{m.zona_nombre}</span>
               </div>

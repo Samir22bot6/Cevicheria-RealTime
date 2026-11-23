@@ -495,13 +495,22 @@ export default function ClienteView() {
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white pb-24 shadow-lg border-x border-slate-100 flex flex-col justify-between">
       {/* Cabecera Móvil */}
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-        <div>
-          <span className="text-xs font-semibold text-ocean-600 uppercase tracking-wider">Cevichería Del Mar</span>
-          <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            Mesa {sesion?.numero_mesa || 'M-??'}
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-          </h1>
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/logo.jpg"
+            alt="Sin Espinas"
+            className="w-9 h-9 rounded-full object-cover border border-ocean-200 shadow-sm"
+          />
+          <div>
+            <span className="text-[10px] font-black text-ocean-800 tracking-wider block leading-none uppercase">
+              SIN ESPINAS
+            </span>
+            <h1 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5 leading-tight">
+              Mesa {sesion?.numero_mesa || 'M-??'}
+              <span className="inline-block w-2 h-2 rounded-full bg-lime-500 animate-pulse"></span>
+            </h1>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1070,7 +1079,7 @@ export default function ClienteView() {
             {!resultadoResena ? (
               <>
                 <h3 className="font-extrabold text-slate-800 text-lg mb-1">¿Cómo estuvo tu experiencia?</h3>
-                <p className="text-xs text-slate-500 mb-4">Tu opinión nos ayuda a mantener la frescura del mar</p>
+                <p className="text-xs text-slate-500 mb-4">Tu opinión nos ayuda a mantener el toque fresco de Sin Espinas</p>
 
                 <div className="flex justify-center gap-2 mb-4">
                   {[1, 2, 3, 4, 5].map(estrella => (

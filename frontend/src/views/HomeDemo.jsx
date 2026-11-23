@@ -8,15 +8,22 @@ export default function HomeDemo() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
       <div className="text-center mb-12">
-        <div className="inline-flex items-center gap-2 bg-ocean-100 text-ocean-700 px-4 py-1.5 rounded-full text-sm font-semibold mb-4 border border-ocean-200">
-          <Sparkles className="w-4 h-4 text-ocean-600" />
-          MVP Cevichería 3FN en Tiempo Real
+        <div className="flex justify-center mb-4">
+          <img
+            src="/logo.jpg"
+            alt="Sin Espinas"
+            className="w-24 h-24 rounded-full object-cover shadow-xl border-2 border-ocean-300"
+          />
         </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
-          Cevichería Del Mar <span className="text-ocean-600">Digital</span>
+        <div className="inline-flex items-center gap-2 bg-ocean-100 text-ocean-800 px-4 py-1.5 rounded-full text-sm font-semibold mb-3 border border-ocean-200">
+          <Sparkles className="w-4 h-4 text-ocean-600" />
+          Plataforma Gastronómica en Tiempo Real
+        </div>
+        <h1 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight">
+          Cevichería <span className="text-ocean-700">SIN ESPINAS</span>
         </h1>
         <p className="mt-3 text-lg text-slate-600 max-w-2xl mx-auto">
-          Sistema integral con carta QR, asistente IA especializado en ceviches, comanda KDS en tiempo real por estación y gestión de cobros.
+          Carta digital por QR con fricción cero, asistente IA de maridaje, pantallas de cocina KDS y cobros con Mercado Pago Perú.
         </p>
       </div>
 

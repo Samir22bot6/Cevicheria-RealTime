@@ -62,8 +62,8 @@ export const MercadoPagoService = {
           items: [
             {
               id: idPago,
-              title: `Consumo Cevichería Del Mar - Mesa`,
-              description: `Pago de consumo gastronómico Cevichería Del Mar`,
+              title: `Consumo Cevichería Sin Espinas - Mesa`,
+              description: `Consumo gastronómico en Cevichería Sin Espinas`,
               quantity: 1,
               currency_id: 'PEN',
               unit_price: Number(totalNum.toFixed(2))
@@ -76,7 +76,7 @@ export const MercadoPagoService = {
           },
           ...(isHttps ? { auto_return: 'approved' } : {}),
           external_reference: idPago,
-          statement_descriptor: 'CEVICHERIA'
+          statement_descriptor: 'SINESPINAS'
         };
 
         const resPref = await fetch('https://api.mercadopago.com/checkout/preferences', {

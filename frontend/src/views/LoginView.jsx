@@ -64,13 +64,18 @@ export default function LoginView() {
       <div className="w-full max-w-md">
         {/* Cabecera */}
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 rounded-2xl bg-ocean-500/10 text-ocean-400 border border-ocean-500/20 mb-3">
-            <ChefHat className="w-8 h-8" />
+          <div className="inline-flex p-1 rounded-3xl bg-slate-800 border border-ocean-500/30 mb-3 shadow-lg">
+            <img
+              src="/logo.jpg"
+              alt="Sin Espinas"
+              className="w-16 h-16 rounded-2xl object-cover"
+            />
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">Acceso de Personal</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Sistema Interno de Gestión y KDS - Cevichería Del Mar
+          <p className="text-xs text-ocean-300 font-semibold mt-1 uppercase tracking-wider">
+            CEVICHERÍA SIN ESPINAS
           </p>
+          <p className="text-[11px] text-slate-400">Sistema Interno de Gestión y Pantallas KDS</p>
         </div>
 
         {/* Tarjeta Login */}

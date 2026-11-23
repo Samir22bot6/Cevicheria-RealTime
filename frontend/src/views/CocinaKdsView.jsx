@@ -92,12 +92,21 @@ export default function CocinaKdsView() {
       {/* Barra Superior KDS */}
       <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link to="/" className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300">
+          <Link to="/" className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 transition">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <div className="flex items-center gap-2">
-            <ChefHat className="w-7 h-7 text-amber-400" />
-            <h1 className="text-xl font-black tracking-wide">KDS COCINA EN VIVO</h1>
+          <img
+            src="/logo.jpg"
+            alt="Sin Espinas"
+            className="w-10 h-10 rounded-xl object-cover border border-ocean-500/40 shadow-sm"
+          />
+          <div>
+            <h1 className="text-lg font-black tracking-wide leading-none uppercase">
+              SIN ESPINAS — KDS COCINA
+            </h1>
+            <span className="text-[10px] text-ocean-300 font-bold uppercase tracking-wider">
+              Control de Comandas por Estación
+            </span>
           </div>
         </div>
 
