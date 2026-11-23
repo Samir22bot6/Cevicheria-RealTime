@@ -38,6 +38,9 @@ export default {
           600: '#dc2626',
           700: '#b91c1c',
         }
+      },
+      transitionDuration: {
+        '350': '350ms',
       }
     },
   },

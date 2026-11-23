@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, socket } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast, ToastContainer } from '../components/Toast';
 import {
   Users,
   LayoutGrid,
@@ -33,6 +34,7 @@ import {
 export default function MozosAdminView() {
   const { usuario, cerrarSesion } = useAuth();
   const navigate = useNavigate();
+  const { showToast, toasts, dismissToast } = useToast();
 
   // Pestañas: 'salon' | 'mesas_qr' | 'carta' | 'personal' | 'resenas'
   const [pestanaActiva, setPestanaActiva] = useState('salon');
@@ -192,7 +194,7 @@ export default function MozosAdminView() {
     try {
       const resSesion = await api.adminObtenerSesionMesa(mesa.id_mesa);
       if (!resSesion.ok || !resSesion.data) {
-        alert('Esta mesa no tiene una sesión de consumo abierta en este momento.');
+        showToast('warning', 'Mesa sin sesión', 'Esta mesa no tiene una sesión de consumo abierta.');
         return;
       }
       const resCuenta = await api.obtenerCuenta(resSesion.data.id_sesion);
@@ -207,7 +209,7 @@ export default function MozosAdminView() {
         });
       }
     } catch (e) {
-      alert('Error consultando cuenta de la mesa');
+      showToast('error', 'Error de cuenta', 'No se pudo consultar la cuenta de la mesa.');
     }
   };
 
@@ -225,12 +227,12 @@ export default function MozosAdminView() {
       });
 
       if (res.ok) {
-        alert(`✅ Cobro registrado con éxito por ${usuario?.nombres}`);
+        showToast('success', '✅ Cobro registrado', `Cobro exitoso por ${usuario?.nombres}`);
         setModalCobroMesa({ abierto: false, mesa: null, cuenta: null, metodo: 'EFECTIVO', propina: 0, procesando: false });
         cargarTodo();
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (e) {
-      alert('Error registrando pago');
+      showToast('error', 'Error de pago', 'No se pudo registrar el pago.');
     }
   };
 
@@ -238,7 +240,7 @@ export default function MozosAdminView() {
   const abrirAsignarMozo = async (mesa) => {
     const res = await api.adminObtenerSesionMesa(mesa.id_mesa);
     if (!res.ok || !res.data) {
-      alert('La mesa debe tener una sesión abierta para asignarle mozo.');
+      showToast('warning', 'Sesión requerida', 'La mesa debe tener una sesión abierta para asignarle mozo.');
       return;
     }
     setModalAsignarMozo({
@@ -252,11 +254,11 @@ export default function MozosAdminView() {
     try {
       const res = await api.adminAsignarMozo(modalAsignarMozo.mesa.id_mesa, modalAsignarMozo.mozoId);
       if (res.ok) {
-        alert('✅ Mozo asignado a la mesa exitosamente.');
+        showToast('success', '✅ Mozo asignado', 'El mozo fue asignado a la mesa correctamente.');
         setModalAsignarMozo({ abierto: false, mesa: null, mozoId: '' });
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (e) {
-      alert(e.message);
+      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -264,7 +266,7 @@ export default function MozosAdminView() {
   const abrirPedidoMozo = async (mesa) => {
     const res = await api.adminObtenerSesionMesa(mesa.id_mesa);
     if (!res.ok || !res.data) {
-      alert('Esta mesa no tiene una sesión abierta. Primero debe abrirse la mesa.');
+      showToast('warning', 'Mesa sin sesión', 'Esta mesa no tiene sesión abierta. Primero abra la mesa.');
       return;
     }
     setModalPedidoMozo({
@@ -295,7 +297,7 @@ export default function MozosAdminView() {
 
   const enviarPedidoMozo = async () => {
     if (modalPedidoMozo.items.length === 0) {
-      alert('Agrega al menos un plato a la comanda');
+      showToast('warning', 'Comanda vacía', 'Agrega al menos un plato a la comanda.');
       return;
     }
 
@@ -308,11 +310,11 @@ export default function MozosAdminView() {
       });
 
       if (res.ok) {
-        alert(`✅ Comanda enviada a cocina con ticket ${res.data.numero_ticket}`);
+        showToast('success', '✅ Comanda enviada', `Ticket ${res.data.numero_ticket} enviado a cocina.`);
         setModalPedidoMozo({ abierto: false, mesa: null, sesion: null, items: [], obs: '' });
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (e) {
-      alert(e.message);
+      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -324,10 +326,10 @@ export default function MozosAdminView() {
       if (res.ok) {
         setUsuarios(prev => [...prev, res.data]);
         setModalUsuario({ abierto: false, datos: { nombres: '', apellidos: '', email: '', password: '', rol: 'MOZO' } });
-        alert('✅ Cuenta de personal creada con éxito.');
-      } else alert(res.error);
+        showToast('success', '✅ Personal creado', 'La cuenta de personal fue creada con éxito.');
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -338,7 +340,7 @@ export default function MozosAdminView() {
         setUsuarios(prev => prev.map(u => u.id_usuario === usr.id_usuario ? { ...u, activo: !usr.activo } : u));
       }
     } catch (e) {
-      alert('Error actualizando usuario');
+      showToast('error', 'Error al actualizar', 'No se pudo actualizar el usuario.');
     }
   };
 
@@ -351,16 +353,16 @@ export default function MozosAdminView() {
         if (res.ok) {
           setGruposOpciones(prev => [...prev, res.data]);
           setModalGrupoOp({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       } else {
         const res = await api.adminActualizarGrupoOpcion(modalGrupoOp.datos.id_grupo_opcion, modalGrupoOp.datos);
         if (res.ok) {
           setGruposOpciones(prev => prev.map(g => g.id_grupo_opcion === res.data.id_grupo_opcion ? res.data : g));
           setModalGrupoOp({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       }
     } catch (e) {
-      alert(e.message);
+      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -370,9 +372,9 @@ export default function MozosAdminView() {
       const res = await api.adminEliminarGrupoOpcion(id_grupo);
       if (res.ok) {
         setGruposOpciones(prev => prev.filter(g => g.id_grupo_opcion !== id_grupo));
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (e) {
-      alert(e.message);
+      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -394,9 +396,9 @@ export default function MozosAdminView() {
           return g;
         }));
         setModalNuevaOpcion({ abierto: false, id_grupo_opcion: null, nombreGrupo: '', datos: { nombre: '', precio_adicional: 0, disponible: true } });
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (e) {
-      alert(e.message);
+      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -410,7 +412,7 @@ export default function MozosAdminView() {
         })));
       }
     } catch (e) {
-      alert('Error actualizando opción');
+      showToast('error', 'Error al actualizar', 'No se pudo actualizar la opción.');
     }
   };
 
@@ -430,7 +432,7 @@ export default function MozosAdminView() {
         }));
       }
     } catch (e) {
-      alert(e.message);
+      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -443,16 +445,16 @@ export default function MozosAdminView() {
         if (res.ok) {
           setZonas(prev => [...prev, res.data]);
           setModalZona({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       } else {
         const res = await api.adminActualizarZona(modalZona.datos.id_zona, modalZona.datos);
         if (res.ok) {
           setZonas(prev => prev.map(z => z.id_zona === res.data.id_zona ? res.data : z));
           setModalZona({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       }
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -462,9 +464,9 @@ export default function MozosAdminView() {
       const res = await api.adminEliminarZona(id_zona);
       if (res.ok) {
         setZonas(prev => prev.filter(z => z.id_zona !== id_zona));
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -476,16 +478,16 @@ export default function MozosAdminView() {
         if (res.ok) {
           setMesas(prev => [...prev, res.data]);
           setModalMesa({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       } else {
         const res = await api.adminActualizarMesa(modalMesa.datos.id_mesa, modalMesa.datos);
         if (res.ok) {
           setMesas(prev => prev.map(m => m.id_mesa === res.data.id_mesa ? res.data : m));
           setModalMesa({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       }
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -495,10 +497,10 @@ export default function MozosAdminView() {
       const res = await api.adminRegenerarQrMesa(id_mesa);
       if (res.ok) {
         setMesas(prev => prev.map(m => m.id_mesa === id_mesa ? { ...m, codigo_qr_token: res.data.nuevo_codigo_qr_token } : m));
-        alert('✅ Nuevo código QR generado exitosamente.');
-      } else alert(res.error);
+        showToast('success', '✅ QR generado', 'Nuevo código QR generado exitosamente.');
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -508,9 +510,9 @@ export default function MozosAdminView() {
       const res = await api.adminEliminarMesa(id_mesa);
       if (res.ok) {
         setMesas(prev => prev.filter(m => m.id_mesa !== id_mesa));
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -523,16 +525,16 @@ export default function MozosAdminView() {
         if (res.ok) {
           api.adminListarPlatos().then(r => r.ok && setPlatos(r.data));
           setModalPlato({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       } else {
         const res = await api.adminActualizarPlato(modalPlato.datos.id_plato, modalPlato.datos);
         if (res.ok) {
           api.adminListarPlatos().then(r => r.ok && setPlatos(r.data));
           setModalPlato({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       }
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -544,7 +546,7 @@ export default function MozosAdminView() {
         setPlatos(prev => prev.map(p => p.id_plato === plato.id_plato ? { ...p, disponible: nuevoEstado } : p));
       }
     } catch (e) {
-      alert('Error al actualizar disponibilidad');
+      showToast('error', 'Error de disponibilidad', 'No se pudo actualizar la disponibilidad.');
     }
   };
 
@@ -553,11 +555,11 @@ export default function MozosAdminView() {
     try {
       const res = await api.adminEliminarPlato(id_plato);
       if (res.ok) {
-        alert(res.data.mensaje);
+        showToast('success', 'Operación exitosa', res.data.mensaje);
         api.adminListarPlatos().then(r => r.ok && setPlatos(r.data));
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -570,16 +572,16 @@ export default function MozosAdminView() {
         if (res.ok) {
           setCategorias(prev => [...prev, res.data].sort((a,b) => a.orden_visualizacion - b.orden_visualizacion));
           setModalCategoria({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       } else {
         const res = await api.adminActualizarCategoria(modalCategoria.datos.id_categoria, modalCategoria.datos);
         if (res.ok) {
           setCategorias(prev => prev.map(c => c.id_categoria === res.data.id_categoria ? res.data : c).sort((a,b) => a.orden_visualizacion - b.orden_visualizacion));
           setModalCategoria({ abierto: false, modo: 'crear', datos: {} });
-        } else alert(res.error);
+        } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
       }
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -589,9 +591,9 @@ export default function MozosAdminView() {
       const res = await api.adminEliminarCategoria(id_categoria);
       if (res.ok) {
         setCategorias(prev => prev.filter(c => c.id_categoria !== id_categoria));
-      } else alert(res.error);
+      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
     } catch (err) {
-      alert(err.message);
+      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
     }
   };
 
@@ -633,6 +635,7 @@ export default function MozosAdminView() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Estilos para impresión limpia de QRs */}
       <style>{`
         @media print {

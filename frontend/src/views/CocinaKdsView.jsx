@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, socket } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast, ToastContainer } from '../components/Toast';
 import { ChefHat, Clock, CheckCircle, Flame, ArrowLeft, RefreshCw, LogOut } from 'lucide-react';
 
 export default function CocinaKdsView() {
@@ -10,6 +11,7 @@ export default function CocinaKdsView() {
   const [cargando, setCargando] = useState(true);
   const { usuario, cerrarSesion } = useAuth();
   const navigate = useNavigate();
+  const { showToast, toasts, dismissToast } = useToast();
 
   const cargarKds = async (est = estacion) => {
     try {
@@ -77,7 +79,7 @@ export default function CocinaKdsView() {
         });
       }
     } catch (e) {
-      alert('Error actualizando plato');
+      showToast('error', 'Error al actualizar', 'No se pudo actualizar el estado del plato.');
     }
   };
 
@@ -89,6 +91,7 @@ export default function CocinaKdsView() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Barra Superior KDS */}
       <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">

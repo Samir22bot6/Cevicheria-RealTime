@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { api, socket } from '../services/api';
+import { useToast, ToastContainer } from '../components/Toast';
 import {
   Utensils,
   Sparkles,
@@ -25,6 +26,7 @@ export default function ClienteView() {
   const { qrToken } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { showToast, toasts, dismissToast } = useToast();
 
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -289,7 +291,7 @@ export default function ClienteView() {
         if (cRes.ok) setCuenta(cRes.data);
       }
     } catch (e) {
-      alert('Error al enviar el pedido a cocina: ' + e.message);
+      showToast('error', 'Error al pedir', e.message || 'No se pudo enviar el pedido a cocina.');
     }
   };
 
@@ -345,10 +347,10 @@ export default function ClienteView() {
           setOrdenCreadaMP(res);
         }
       } else {
-        alert(res.error || 'Error creando orden de pago');
+        showToast('error', 'Error de pago', res.error || 'Error creando orden de pago');
       }
     } catch (e) {
-      alert('Error al conectar con pasarela de pago');
+      showToast('error', 'Sin conexión', 'No se pudo conectar con la pasarela de pago.');
     } finally {
       setProcesandoPago(false);
     }
@@ -380,10 +382,10 @@ export default function ClienteView() {
           setMostrarModalResena(true);
         }, 1000);
       } else {
-        alert(res.error || 'Error confirmando pago');
+        showToast('error', 'Error confirmando pago', res.error || 'No se pudo confirmar el pago');
       }
     } catch (e) {
-      alert('Error simulando aprobación');
+      showToast('error', 'Error simulando aprobación', e.message || 'Intenta de nuevo');
     } finally {
       setProcesandoPago(false);
     }
@@ -416,7 +418,7 @@ export default function ClienteView() {
         setMostrarModalResena(true);
       }
     } catch (e) {
-      alert('Error procesando el pago');
+      showToast('error', 'Error de pago', e.message || 'No se pudo procesar el pago');
     } finally {
       setProcesandoPago(false);
     }
@@ -440,7 +442,7 @@ export default function ClienteView() {
         }
       }
     } catch (e) {
-      alert('Error al registrar reseña');
+      showToast('error', 'Error al registrar reseña', e.message || 'Intenta de nuevo');
     }
   };
 
@@ -451,7 +453,7 @@ export default function ClienteView() {
       id_sesion: sesion?.id_sesion,
       mensaje: `Mesa ${sesion?.numero_mesa} solicita atención de mozo`
     });
-    alert(`🔔 Hemos notificado al mozo para acercarse a la Mesa ${sesion?.numero_mesa}`);
+    showToast('info', '🔔 Mozo notificado', `El mozo se acercará en breve a la Mesa ${sesion?.numero_mesa}`);
   };
 
   if (cargando) {
@@ -494,6 +496,7 @@ export default function ClienteView() {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white pb-24 shadow-lg border-x border-slate-100 flex flex-col justify-between">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Cabecera Móvil */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 py-2.5 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
