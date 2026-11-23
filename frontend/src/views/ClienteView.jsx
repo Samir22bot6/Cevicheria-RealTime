@@ -727,7 +727,7 @@ export default function ClienteView() {
               </div>
             )}
 
-            {/* Acciones de Pago y Reseña */}
+            {/* Acciones de Pago, Reseña y Nueva Orden */}
             <div className="space-y-2">
               {cuenta && cuenta.saldo_pendiente > 0 ? (
                 <button
@@ -738,13 +738,23 @@ export default function ClienteView() {
                   Pagar Cuenta (S/ {cuenta.saldo_pendiente.toFixed(2)})
                 </button>
               ) : (
-                <button
-                  onClick={() => setMostrarModalResena(true)}
-                  className="w-full bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition"
-                >
-                  <Star className="w-4 h-4" />
-                  Calificar Experiencia
-                </button>
+                <>
+                  <button
+                    onClick={() => setMostrarModalResena(true)}
+                    className="w-full bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition"
+                  >
+                    <Star className="w-4 h-4" />
+                    Calificar Experiencia
+                  </button>
+
+                  <button
+                    onClick={() => setPestana('carta')}
+                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 transition"
+                  >
+                    <Utensils className="w-4 h-4 text-ocean-600" />
+                    Pedir más platos / Ver la Carta
+                  </button>
+                </>
               )}
             </div>
           </div>

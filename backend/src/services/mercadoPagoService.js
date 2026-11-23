@@ -49,58 +49,60 @@ export const MercadoPagoService = {
       pagado_en: new Date().toISOString()
     });
 
-    // Si MP_ACCESS_TOKEN está configurado, invocar la nueva Orders API de Mercado Pago
+    // Si MP_ACCESS_TOKEN está configurado, crear la preferencia de pago en Mercado Pago (Checkout Pro Oficial Perú)
     if (config.mpAccessToken && !config.mpAccessToken.includes('tu-access-token')) {
       try {
-        const callbackUrl = `${config.frontendUrl}/mesa/${tokenFrontend}?id_pago=${idPago}`;
+        const rawFrontend = (config.frontendUrl || 'http://localhost:5173').replace(/\/$/, '');
+        const isHttps = rawFrontend.startsWith('https://');
+        const callbackUrl = `${rawFrontend}/mesa/${tokenFrontend}?id_pago=${idPago}`;
 
-        const payloadOrder = {
-          type: 'online',
-          processing_mode: 'automatic',
-          total_amount: totalNum.toFixed(2),
-          external_reference: idPago,
+        // 1. Intentar Checkout Pro Preferences API (soporta Yape, Plin, Tarjetas Visa/Mastercard y efectivo)
+        // Nota: auto_return solo es válido por Mercado Pago si la URL usa HTTPS (producción)
+        const preferencePayload = {
           items: [
             {
-              title: `Consumo Cevichería Del Mar`,
+              id: idPago,
+              title: `Consumo Cevichería Del Mar - Mesa`,
+              description: `Pago de consumo gastronómico Cevichería Del Mar`,
               quantity: 1,
-              unit_price: totalNum.toFixed(2),
-              unit_measure: 'unit',
-              total_amount: totalNum.toFixed(2)
+              currency_id: 'PEN',
+              unit_price: Number(totalNum.toFixed(2))
             }
           ],
-          config: {
-            online: {
-              callback_url: callbackUrl
-            }
-          }
+          back_urls: {
+            success: callbackUrl,
+            failure: callbackUrl,
+            pending: callbackUrl
+          },
+          ...(isHttps ? { auto_return: 'approved' } : {}),
+          external_reference: idPago,
+          statement_descriptor: 'CEVICHERIA'
         };
 
-        const response = await fetch('https://api.mercadopago.com/v1/orders', {
+        const resPref = await fetch('https://api.mercadopago.com/checkout/preferences', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.mpAccessToken}`,
-            'X-Idempotency-Key': uuidv4()
+            'Authorization': `Bearer ${config.mpAccessToken}`
           },
-          body: JSON.stringify(payloadOrder)
+          body: JSON.stringify(preferencePayload)
         });
 
-        const dataOrder = await response.json();
+        const dataPref = await resPref.json();
 
-        if (response.ok && (dataOrder.init_point || dataOrder.checkout_url || dataOrder.point_of_interaction?.transaction_data?.ticket_url)) {
-          const checkoutUrl = dataOrder.init_point || dataOrder.checkout_url || dataOrder.point_of_interaction?.transaction_data?.ticket_url;
+        if (resPref.ok && dataPref.init_point) {
           return {
             ok: true,
             modo_demo: false,
             id_pago: idPago,
-            checkout_url: checkoutUrl,
-            order_id: dataOrder.id
+            checkout_url: dataPref.init_point,
+            order_id: dataPref.id
           };
         } else {
-          console.warn('Aviso Mercado Pago Orders API:', dataOrder);
+          console.warn('Aviso Mercado Pago Preferences API:', dataPref);
         }
       } catch (e) {
-        console.warn('Fallo llamada a Orders API de Mercado Pago:', e.message);
+        console.warn('Fallo llamada a Checkout Pro de Mercado Pago:', e.message);
       }
     }
 
