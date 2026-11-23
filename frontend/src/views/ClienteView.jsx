@@ -16,7 +16,9 @@ import {
   CreditCard,
   ChefHat,
   ShieldCheck,
-  Check
+  Check,
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 
 export default function ClienteView() {
@@ -26,6 +28,7 @@ export default function ClienteView() {
 
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [errorSesion, setErrorSesion] = useState(null);
   const [pestana, setPestana] = useState('carta'); // 'carta' | 'ia' | 'cuenta'
 
   // Carta y filtros
@@ -68,50 +71,64 @@ export default function ClienteView() {
   const [comprobantePago, setComprobantePago] = useState(null);
 
   // 1. Iniciar sesión con código QR y registrar aislamiento en sessionStorage
-  useEffect(() => {
-    if (qrToken) {
-      sessionStorage.setItem('cevicheria_cliente_qr', qrToken);
+  const cargarSesionMesa = async () => {
+    if (!qrToken) {
+      setErrorSesion('No se proporcionó ningún código QR en la URL.');
+      setCargando(false);
+      return;
     }
 
-    async function init() {
-      try {
-        setCargando(true);
-        const res = await api.abrirSesion(qrToken, 2);
-        if (res.ok && res.data) {
-          setSesion(res.data);
-          socket.emit('unirse_sesion', res.data.id_sesion);
+    sessionStorage.setItem('cevicheria_cliente_qr', qrToken);
+    setErrorSesion(null);
+    setCargando(true);
 
-          // Cargar carta y cuenta inicial
-          const [resCarta, resCuenta] = await Promise.all([
-            api.obtenerCarta(),
-            api.obtenerCuenta(res.data.id_sesion)
-          ]);
+    try {
+      const res = await api.abrirSesion(qrToken, 1);
+      if (res && res.ok && res.data) {
+        setSesion(res.data);
+        socket.emit('unirse_sesion', res.data.id_sesion);
 
-          if (resCarta.ok) {
-            setCarta(resCarta.data);
-            if (resCarta.data.length > 0) setCatSeleccionada(resCarta.data[0].id_categoria);
-          }
-          if (resCuenta.ok) {
-            setCuenta(resCuenta.data);
-          }
+        // Cargar carta y cuenta inicial
+        const [resCarta, resCuenta] = await Promise.all([
+          api.obtenerCarta(),
+          api.obtenerCuenta(res.data.id_sesion)
+        ]);
 
-          // Verificar si retornamos de Mercado Pago con parámetros de aprobación
-          const idPagoUrl = searchParams.get('id_pago');
-          const orderIdUrl = searchParams.get('order_id') || searchParams.get('merchant_order_id');
-          const paymentIdUrl = searchParams.get('payment_id');
-          const statusUrl = searchParams.get('status') || searchParams.get('collection_status');
-
-          if (idPagoUrl) {
-            confirmarRetornoDesdeUrl(idPagoUrl, orderIdUrl, paymentIdUrl, statusUrl, res.data.id_sesion);
-          }
+        if (resCarta.ok) {
+          setCarta(resCarta.data);
+          if (resCarta.data.length > 0) setCatSeleccionada(resCarta.data[0].id_categoria);
         }
-      } catch (e) {
-        console.error('Error inicializando sesión:', e);
-      } finally {
-        setCargando(false);
+        if (resCuenta.ok) {
+          setCuenta(resCuenta.data);
+        }
+
+        // Verificar si retornamos de Mercado Pago con parámetros de aprobación
+        const idPagoUrl = searchParams.get('id_pago');
+        const orderIdUrl = searchParams.get('order_id') || searchParams.get('merchant_order_id');
+        const paymentIdUrl = searchParams.get('payment_id');
+        const statusUrl = searchParams.get('status') || searchParams.get('collection_status');
+
+        if (idPagoUrl) {
+          confirmarRetornoDesdeUrl(idPagoUrl, orderIdUrl, paymentIdUrl, statusUrl, res.data.id_sesion);
+        }
+      } else {
+        const msg = res?.error || res?.message || 'No fue posible abrir la sesión de la mesa.';
+        setErrorSesion(msg);
       }
+    } catch (e) {
+      console.error('Error inicializando sesión:', e);
+      setErrorSesion(
+        e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')
+          ? 'Error de conexión con el servidor. Si el backend está en Render, puede tardar hasta 30-50 segundos en despertar.'
+          : e.message || 'Error inesperado al conectar con el servidor.'
+      );
+    } finally {
+      setCargando(false);
     }
-    init();
+  };
+
+  useEffect(() => {
+    cargarSesionMesa();
   }, [qrToken]);
 
   // Función para confirmar retorno de pasarela
@@ -439,9 +456,35 @@ export default function ClienteView() {
 
   if (cargando) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center">
-        <div className="w-12 h-12 border-4 border-ocean-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-slate-600 font-medium">Abriendo mesa y cargando carta fresca...</p>
+      <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-slate-50">
+        <div className="w-14 h-14 border-4 border-ocean-600 border-t-transparent rounded-full animate-spin mb-4 shadow-sm"></div>
+        <h2 className="text-base font-bold text-slate-800 mb-1">Conectando con tu mesa...</h2>
+        <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
+          Abriendo sesión y cargando carta fresca del día. Si el servidor está iniciando, puede demorar unos segundos.
+        </p>
+      </div>
+    );
+  }
+
+  if (errorSesion) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-slate-50">
+        <div className="bg-white p-6 rounded-2xl shadow-xl border border-red-100 max-w-sm w-full">
+          <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h2 className="text-base font-bold text-slate-800 mb-2">No pudimos conectar con la mesa</h2>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-5 text-left">
+            <p className="text-xs text-red-700 font-medium break-words">{errorSesion}</p>
+          </div>
+          <button
+            onClick={cargarSesionMesa}
+            className="w-full bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Reintentar Conexión
+          </button>
+        </div>
       </div>
     );
   }

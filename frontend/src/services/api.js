@@ -1,7 +1,16 @@
 import io from 'socket.io-client';
 
-const API_BASE_URL = 'http://localhost:4000/api/v1';
-const SOCKET_URL = 'http://localhost:4000';
+// Configuración dinámica de API y WebSockets sin barra final
+const RAW_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const CLEAN_BASE = RAW_URL.replace(/\/$/, '');
+
+// Si VITE_API_URL ya incluye '/api/v1', no duplicarlo
+const API_BASE_URL = CLEAN_BASE.endsWith('/api/v1')
+  ? CLEAN_BASE
+  : `${CLEAN_BASE}/api/v1`;
+
+// Para Socket.io necesitamos el origen raíz del servidor backend
+const SOCKET_URL = CLEAN_BASE.replace(/\/api\/v1$/, '');
 
 export const socket = io(SOCKET_URL, {
   autoConnect: true,

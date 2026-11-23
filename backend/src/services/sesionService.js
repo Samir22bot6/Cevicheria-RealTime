@@ -34,7 +34,8 @@ export const SesionService = {
             numero_mesa: mesa.numero_mesa,
             token_acceso_cliente: sesionExistente.token_acceso_cliente,
             id_mesa: mesa.id_mesa,
-            estado_mesa: 'OCUPADA'
+            estado_mesa: 'OCUPADA',
+            estado: 'ABIERTA'
           };
         }
 
@@ -75,7 +76,8 @@ export const SesionService = {
           numero_mesa: mesa.numero_mesa,
           token_acceso_cliente: nuevaSesion.token_acceso_cliente,
           id_mesa: mesa.id_mesa,
-          estado_mesa: 'OCUPADA'
+          estado_mesa: 'OCUPADA',
+          estado: 'ABIERTA'
         };
       } catch (err) {
         console.warn('Fallo Supabase en abrirSesion, usando fallback:', err.message);
@@ -119,7 +121,8 @@ export const SesionService = {
       numero_mesa: mesa.numero_mesa,
       token_acceso_cliente: sesion.token_acceso_cliente,
       id_mesa: mesa.id_mesa,
-      estado_mesa: mesa.estado
+      estado_mesa: mesa.estado,
+      estado: sesion.estado
     };
   },
 

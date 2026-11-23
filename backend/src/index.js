@@ -10,20 +10,44 @@ import { AuthService } from './services/authService.js';
 const app = express();
 const server = http.createServer(app);
 
-// Configuración de CORS
+// Configuración de orígenes permitidos para CORS (soporta FRONTEND_URL con o sin barra final y localhost)
+const frontendUrlConfig = (config.frontendUrl || 'http://localhost:5173').trim();
+const normalizedFrontend = frontendUrlConfig.replace(/\/$/, '');
+
+const corsOriginValidator = (origin, callback) => {
+  // Permitir solicitudes sin origin (como apps móviles, Postman o curl)
+  if (!origin) return callback(null, true);
+
+  const normalizedOrigin = origin.replace(/\/$/, '');
+  
+  if (
+    normalizedOrigin === normalizedFrontend ||
+    normalizedOrigin.includes('localhost') ||
+    normalizedOrigin.includes('127.0.0.1') ||
+    normalizedOrigin.endsWith('.vercel.app') // Opcional para previsualizaciones de Vercel
+  ) {
+    return callback(null, true);
+  }
+
+  // Si no coincide pero queremos ser flexibles en producción:
+  return callback(null, true);
+};
+
+// Configuración de CORS Express
 app.use(cors({
-  origin: '*',
+  origin: corsOriginValidator,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   credentials: true
 }));
 
 app.use(express.json());
 
-// WebSockets con Socket.io
+// WebSockets con Socket.io y CORS flexible
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']
+    origin: corsOriginValidator,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
+    credentials: true
   }
 });
 initSocket(io);

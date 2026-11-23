@@ -9,11 +9,14 @@ import { IaService } from '../services/iaService.js';
 export const SesionController = {
   async abrir(req, res) {
     try {
-      const { codigo_qr_token, cantidad_comensales } = req.body;
-      if (!codigo_qr_token) {
-        return res.status(400).json({ error: 'codigo_qr_token es requerido' });
+      const token = req.body.codigo_qr_token || req.body.qrToken;
+      const comensales = req.body.cantidad_comensales ?? 1;
+
+      if (!token) {
+        return res.status(400).json({ ok: false, error: 'codigo_qr_token o qrToken es requerido' });
       }
-      const data = await SesionService.abrirSesion(codigo_qr_token, cantidad_comensales);
+
+      const data = await SesionService.abrirSesion(token, comensales);
       return res.status(200).json({ ok: true, data });
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message });
