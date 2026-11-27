@@ -241,11 +241,11 @@ export default function MozosAdminView() {
     }
   };
 
-  // 1. Cargar datos iniciales
+  // 1. Cargar datos iniciales de forma resiliente
   const cargarTodo = async () => {
     try {
       setCargando(true);
-      const [resMesas, resZonas, resCats, resPlatos, resMeta, resGrupos, resUsers, resResenas, resConfig] = await Promise.all([
+      const [resMesas, resZonas, resCats, resPlatos, resMeta, resGrupos, resUsers, resResenas, resConfig] = await Promise.allSettled([
         api.adminListarMesas(),
         api.adminListarZonas(),
         api.adminListarCategorias(),
@@ -257,17 +257,30 @@ export default function MozosAdminView() {
         api.adminObtenerConfiguracion().catch(() => ({ ok: false }))
       ]);
 
-      if (resMesas.ok) setMesas(resMesas.data);
-      if (resZonas.ok) setZonas(resZonas.data);
-      if (resCats.ok) setCategorias(resCats.data);
-      if (resPlatos.ok) setPlatos(resPlatos.data);
-      if (resMeta.ok) setMetaOpciones(resMeta.data);
-      if (resGrupos.ok) setGruposOpciones(resGrupos.data);
-      if (resUsers.ok) setUsuarios(resUsers.data);
-      if (resResenas.ok) setDatosResenas(resResenas.data);
-      if (resConfig?.ok && resConfig.data) setConfiguracionGPS(resConfig.data);
+      const val = (res) => (res.status === 'fulfilled' ? res.value : null);
+
+      const dMesas = val(resMesas);
+      const dZonas = val(resZonas);
+      const dCats = val(resCats);
+      const dPlatos = val(resPlatos);
+      const dMeta = val(resMeta);
+      const dGrupos = val(resGrupos);
+      const dUsers = val(resUsers);
+      const dResenas = val(resResenas);
+      const dConfig = val(resConfig);
+
+      if (dMesas?.ok && Array.isArray(dMesas.data)) setMesas(dMesas.data);
+      if (dZonas?.ok && Array.isArray(dZonas.data)) setZonas(dZonas.data);
+      if (dCats?.ok && Array.isArray(dCats.data)) setCategorias(dCats.data);
+      if (dPlatos?.ok && Array.isArray(dPlatos.data)) setPlatos(dPlatos.data);
+      if (dMeta?.ok && dMeta.data) setMetaOpciones(dMeta.data);
+      if (dGrupos?.ok && Array.isArray(dGrupos.data)) setGruposOpciones(dGrupos.data);
+      if (dUsers?.ok && Array.isArray(dUsers.data)) setUsuarios(dUsers.data);
+      if (dResenas?.ok && dResenas.data) setDatosResenas(dResenas.data);
+      if (dConfig?.ok && dConfig.data) setConfiguracionGPS(dConfig.data);
     } catch (e) {
       console.error('Error cargando panel de control:', e);
+      showToast('error', 'Error al cargar datos', 'Revisa la conexión o intenta refrescar.');
     } finally {
       setCargando(false);
     }
@@ -992,8 +1005,23 @@ export default function MozosAdminView() {
             {pestanaActiva === 'salon' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                  {zonas.map(zona => {
-                    const mesasZona = mesas.filter(m => m.id_zona === zona.id_zona);
+                  {zonas.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+                      <LayoutGrid className="w-12 h-12 text-ocean-300 mx-auto mb-3" />
+                      <h4 className="font-extrabold text-slate-800 text-base">Aún no se han cargado zonas o mesas</h4>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
+                        Si el servidor en Render recién está despertando, pulsa el botón de refrescar para sincronizar.
+                      </p>
+                      <button
+                        onClick={cargarTodo}
+                        className="bg-ocean-600 hover:bg-ocean-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition inline-flex items-center gap-1.5 shadow-sm"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" /> Refrescar Salón
+                      </button>
+                    </div>
+                  ) : (
+                    zonas.map(zona => {
+                      const mesasZona = mesas.filter(m => m.id_zona === zona.id_zona);
 
                     return (
                       <div key={zona.id_zona} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
@@ -1080,7 +1108,7 @@ export default function MozosAdminView() {
                         </div>
                       </div>
                     );
-                  })}
+                  }))}
                 </div>
 
                 {/* Panel Lateral: Alertas de Servicio en Vivo */}
