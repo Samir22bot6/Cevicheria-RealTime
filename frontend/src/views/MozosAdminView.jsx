@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, socket } from '../services/api';
@@ -28,7 +28,11 @@ import {
   Box,
   Sliders,
   CheckCircle2,
-  X
+  X,
+  Volume2,
+  VolumeX,
+  MapPin,
+  Navigation
 } from 'lucide-react';
 
 export default function MozosAdminView() {
@@ -38,6 +42,20 @@ export default function MozosAdminView() {
 
   // Pestañas: 'salon' | 'mesas_qr' | 'carta' | 'personal' | 'resenas'
   const [pestanaActiva, setPestanaActiva] = useState('salon');
+
+  // Sonido y Alertas
+  const [sonidoActivo, setSonidoActivo] = useState(true);
+
+  // Configuración GPS / Geocerca
+  const [configuracionGPS, setConfiguracionGPS] = useState({
+    nombre_local: 'SIN ESPINAS',
+    latitud: -16.4090474,
+    longitud: -71.5374510,
+    radio_permitido_metros: 80,
+    validar_gps: false
+  });
+  const [guardandoConfig, setGuardandoConfig] = useState(false);
+  const [obteniendoUbicacion, setObteniendoUbicacion] = useState(false);
 
   // Datos Generales
   const [mesas, setMesas] = useState([]);
@@ -112,11 +130,91 @@ export default function MozosAdminView() {
   // Modal Impresión QR
   const [impresionModal, setImpresionModal] = useState({ abierto: false, mesa: null, modoTodos: false });
 
+  // Utilidad de sonido Web Audio API (timbre de cocina y alertas)
+  const playNotificationSound = (tipo = 'alerta') => {
+    if (!sonidoActivo) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (tipo === 'listo') {
+        // Campana de cocina (plato listo en barra)
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      } else {
+        // Alerta de mozo / llamado de mesa
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.6);
+      }
+    } catch (e) {
+      console.warn('Audio no disponible:', e);
+    }
+  };
+
+  const obtenerMiUbicacionGPS = () => {
+    if (!navigator.geolocation) {
+      showToast('error', 'Geolocalización no soportada', 'Tu navegador no permite obtener coordenadas GPS.');
+      return;
+    }
+    setObteniendoUbicacion(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setConfiguracionGPS(prev => ({
+          ...prev,
+          latitud: parseFloat(pos.coords.latitude.toFixed(7)),
+          longitud: parseFloat(pos.coords.longitude.toFixed(7))
+        }));
+        setObteniendoUbicacion(false);
+        showToast('success', 'Ubicación obtenida', `Lat: ${pos.coords.latitude.toFixed(5)}, Lon: ${pos.coords.longitude.toFixed(5)}`);
+      },
+      (err) => {
+        setObteniendoUbicacion(false);
+        showToast('error', 'Error GPS', err.message || 'No se pudo obtener tu ubicación actual.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const guardarConfiguracionGPS = async () => {
+    setGuardandoConfig(true);
+    try {
+      const res = await api.adminActualizarConfiguracion(configuracionGPS);
+      if (res.ok) {
+        if (res.data) setConfiguracionGPS(res.data);
+        showToast('success', 'Configuración guardada', 'Los ajustes de geocerca y GPS han sido actualizados.');
+      } else {
+        showToast('error', 'Error guardando', res.error || 'No se pudo guardar la configuración.');
+      }
+    } catch (e) {
+      showToast('error', 'Error', e.message || 'Error al conectar con el servidor.');
+    } finally {
+      setGuardandoConfig(false);
+    }
+  };
+
   // 1. Cargar datos iniciales
   const cargarTodo = async () => {
     try {
       setCargando(true);
-      const [resMesas, resZonas, resCats, resPlatos, resMeta, resGrupos, resUsers, resResenas] = await Promise.all([
+      const [resMesas, resZonas, resCats, resPlatos, resMeta, resGrupos, resUsers, resResenas, resConfig] = await Promise.all([
         api.adminListarMesas(),
         api.adminListarZonas(),
         api.adminListarCategorias(),
@@ -124,7 +222,8 @@ export default function MozosAdminView() {
         api.obtenerMetaAdmin(),
         api.adminListarGruposOpciones(),
         api.adminListarUsuarios(),
-        api.adminObtenerResenas()
+        api.adminObtenerResenas(),
+        api.adminObtenerConfiguracion().catch(() => ({ ok: false }))
       ]);
 
       if (resMesas.ok) setMesas(resMesas.data);
@@ -135,6 +234,7 @@ export default function MozosAdminView() {
       if (resGrupos.ok) setGruposOpciones(resGrupos.data);
       if (resUsers.ok) setUsuarios(resUsers.data);
       if (resResenas.ok) setDatosResenas(resResenas.data);
+      if (resConfig?.ok && resConfig.data) setConfiguracionGPS(resConfig.data);
     } catch (e) {
       console.error('Error cargando panel de control:', e);
     } finally {
@@ -150,14 +250,39 @@ export default function MozosAdminView() {
   useEffect(() => {
     socket.emit('unirse_mozos');
 
+    socket.on('llamar_mozo', (alerta) => {
+      setAlertas(prev => [
+        {
+          id_alerta: alerta.id_alerta || `alerta-${Date.now()}`,
+          tipo: 'LLAMAR_MOZO',
+          numero_mesa: alerta.numero_mesa,
+          id_sesion: alerta.id_sesion,
+          motivo: alerta.motivo,
+          mensaje: alerta.mensaje || `Mesa ${alerta.numero_mesa}: ${alerta.motivo || 'Solicita atención'}`,
+          hora: alerta.hora || new Date().toISOString()
+        },
+        ...prev
+      ]);
+      playNotificationSound('alerta');
+      showToast('info', `🔔 Mesa ${alerta.numero_mesa}`, alerta.motivo || 'Solicita atención');
+    });
+
     socket.on('alerta_mesa', (alerta) => {
-      setAlertas(prev => [alerta, ...prev]);
+      setAlertas(prev => [
+        {
+          id_alerta: alerta.id_alerta || `alerta-${Date.now()}`,
+          ...alerta
+        },
+        ...prev
+      ]);
+      playNotificationSound('alerta');
     });
 
     socket.on('estado_plato_actualizado', (data) => {
       if (data.estado_estacion === 'LISTO') {
         setAlertas(prev => [
           {
+            id_alerta: `listo-${Date.now()}-${Math.random()}`,
             tipo: 'PLATO_LISTO',
             numero_mesa: data.numero_mesa,
             mensaje: `Plato listo en cocina: "${data.plato}" para Mesa ${data.numero_mesa}`,
@@ -165,6 +290,7 @@ export default function MozosAdminView() {
           },
           ...prev
         ]);
+        playNotificationSound('listo');
       }
     });
 
@@ -177,12 +303,13 @@ export default function MozosAdminView() {
     });
 
     return () => {
+      socket.off('llamar_mozo');
       socket.off('alerta_mesa');
       socket.off('estado_plato_actualizado');
       socket.off('mesa_estado_cambiado');
       socket.off('pago_notificado');
     };
-  }, []);
+  }, [sonidoActivo]);
 
   const handleCerrarSesion = () => {
     cerrarSesion();
@@ -728,6 +855,29 @@ export default function MozosAdminView() {
 
         {/* Acciones Rápidas */}
         <div className="flex items-center gap-2">
+          {/* Botón de Sonido de Cocina / Alertas */}
+          <button
+            onClick={() => {
+              const nuevoEstado = !sonidoActivo;
+              setSonidoActivo(nuevoEstado);
+              showToast(
+                nuevoEstado ? 'info' : 'warning',
+                nuevoEstado ? 'Sonido activado' : 'Sonido silenciado',
+                nuevoEstado ? 'Sonarán campanas de cocina y llamados de mozo' : 'Alertas sonoras desactivadas'
+              );
+              if (nuevoEstado) playNotificationSound('alerta');
+            }}
+            className={`p-2 rounded-xl border transition flex items-center gap-1.5 text-xs font-bold ${
+              sonidoActivo
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-slate-100 border-slate-200 text-slate-400 hover:bg-slate-200'
+            }`}
+            title={sonidoActivo ? 'Silenciar alertas sonoras' : 'Activar alertas sonoras'}
+          >
+            {sonidoActivo ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4" />}
+            <span className="hidden sm:inline">{sonidoActivo ? 'Sonido ON' : 'Silencio'}</span>
+          </button>
+
           <button
             onClick={cargarTodo}
             className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold flex items-center gap-1"
@@ -880,10 +1030,15 @@ export default function MozosAdminView() {
                             </span>
                           </div>
                           <button
-                            onClick={() => setAlertas(alertas.filter((_, i) => i !== idx))}
-                            className="p-1 rounded bg-white/60 hover:bg-white text-slate-500"
+                            onClick={() => {
+                              setAlertas(alertas.filter((_, i) => i !== idx));
+                              showToast('info', 'Alerta atendida', 'Se retiró la notificación.');
+                            }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-700 hover:text-emerald-700 font-bold text-[11px] shadow-sm transition border border-slate-200 flex-shrink-0"
+                            title="Marcar como atendida"
                           >
-                            <Check className="w-3.5 h-3.5" />
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Atendida</span>
                           </button>
                         </div>
                       ))
@@ -1048,6 +1203,113 @@ export default function MozosAdminView() {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+
+                {/* 3. CONTROL DE UBICACIÓN (GEOCERCA GPS) */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-4">
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                        <MapPin className="w-5 h-5 text-ocean-600" />
+                        Control de Ubicación (Geocerca del Restaurante)
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Valida que los comensales estén físicamente en el local para ordenar por QR.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                        configuracionGPS.validar_gps
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}>
+                        {configuracionGPS.validar_gps ? '🛡️ Geocerca ACTIVA' : '⚪ Geocerca INACTIVA (Modo Demo)'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5">
+                    {/* Switch Validar GPS */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-slate-700 block mb-1">Validación de GPS</span>
+                        <p className="text-[11px] text-slate-400">
+                          {configuracionGPS.validar_gps
+                            ? 'Bloquea el acceso a clientes fuera del radio del local.'
+                            : 'Permite abrir mesas remotamente para pruebas o demostraciones.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setConfiguracionGPS(prev => ({ ...prev, validar_gps: !prev.validar_gps }))}
+                        className={`mt-4 w-full py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                          configuracionGPS.validar_gps
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                            : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                        }`}
+                      >
+                        {configuracionGPS.validar_gps ? 'Desactivar Geocerca' : 'Activar Geocerca GPS'}
+                      </button>
+                    </div>
+
+                    {/* Radio permitido en metros */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <span className="text-xs font-bold text-slate-700 block mb-1">Radio Permitido</span>
+                      <p className="text-[11px] text-slate-400 mb-2">
+                        Distancia máxima permitida en metros a la redonda:
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="20"
+                          max="300"
+                          step="10"
+                          value={configuracionGPS.radio_permitido_metros || 80}
+                          onChange={e => setConfiguracionGPS(prev => ({ ...prev, radio_permitido_metros: parseInt(e.target.value) || 80 }))}
+                          className="flex-1 accent-ocean-600"
+                        />
+                        <span className="font-extrabold text-sm text-ocean-700 bg-ocean-50 border border-ocean-200 px-2.5 py-1 rounded-lg">
+                          {configuracionGPS.radio_permitido_metros || 80} m
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Coordenadas actuales del local */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <span className="text-xs font-bold text-slate-700 block mb-1">Coordenadas del Local</span>
+                      <div className="space-y-1.5 text-xs font-mono">
+                        <div className="flex justify-between bg-white px-2 py-1 rounded border border-slate-200">
+                          <span className="text-slate-400">Lat:</span>
+                          <span className="font-bold text-slate-800">{configuracionGPS.latitud ?? -16.4090474}</span>
+                        </div>
+                        <div className="flex justify-between bg-white px-2 py-1 rounded border border-slate-200">
+                          <span className="text-slate-400">Lon:</span>
+                          <span className="font-bold text-slate-800">{configuracionGPS.longitud ?? -71.5374510}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={obtenerMiUbicacionGPS}
+                        disabled={obteniendoUbicacion}
+                        className="mt-3 w-full bg-white hover:bg-ocean-50 border border-ocean-300 text-ocean-700 text-xs font-bold py-1.5 px-3 rounded-lg transition flex items-center justify-center gap-1.5 shadow-xs"
+                      >
+                        <Navigation className="w-3.5 h-3.5" />
+                        {obteniendoUbicacion ? 'Obteniendo GPS...' : 'Usar mi ubicación actual como local'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={guardarConfiguracionGPS}
+                      disabled={guardandoConfig}
+                      className="bg-ocean-600 hover:bg-ocean-700 disabled:opacity-50 text-white font-bold text-xs py-2.5 px-5 rounded-xl shadow-md transition flex items-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      {guardandoConfig ? 'Guardando ajustes...' : 'Guardar Configuración de Geocerca'}
+                    </button>
                   </div>
                 </div>
               </div>

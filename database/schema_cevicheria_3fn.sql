@@ -53,6 +53,7 @@ CREATE TABLE sesiones_mesa (
     estado               VARCHAR(20)  NOT NULL DEFAULT 'ABIERTA' 
                          CHECK (estado IN ('ABIERTA', 'CERRADA', 'CANCELADA')),
     abierta_en           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    expira_en            TIMESTAMPTZ  NOT NULL DEFAULT (NOW() + INTERVAL '90 minutes'),
     cerrada_en           TIMESTAMPTZ
 );
 
@@ -307,3 +308,40 @@ INSERT INTO opciones_personalizacion (id_grupo_opcion, nombre, precio_adicional)
 INSERT INTO plato_grupos_opciones (id_plato, id_grupo_opcion) VALUES
 (1, 1), (1, 2), (1, 3),
 (2, 1), (2, 2), (2, 3);
+
+-- ============================================================================
+-- 9. CONFIGURACIÓN DEL LOCAL (GEOCERCA GPS) Y MIGRACIÓN PARA SUPABASE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS configuracion_local (
+    id                      INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    nombre_local            VARCHAR(100) NOT NULL DEFAULT 'SIN ESPINAS',
+    latitud                 NUMERIC(10, 7) NOT NULL DEFAULT -16.4090474,
+    longitud                NUMERIC(10, 7) NOT NULL DEFAULT -71.5374510,
+    radio_permitido_metros  INT NOT NULL DEFAULT 80 CHECK (radio_permitido_metros > 0),
+    validar_gps             BOOLEAN NOT NULL DEFAULT FALSE,
+    actualizado_en          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO configuracion_local (id, nombre_local, latitud, longitud, radio_permitido_metros, validar_gps)
+VALUES (1, 'SIN ESPINAS', -16.4090474, -71.5374510, 80, FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- BLOQUE DE MIGRACIÓN RÁPIDA (Ejecutar en SQL Editor de Supabase si ya existe la BD)
+-- ----------------------------------------------------------------------------
+-- ALTER TABLE sesiones_mesa
+--   ADD COLUMN IF NOT EXISTS expira_en TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 minutes');
+--
+-- CREATE TABLE IF NOT EXISTS configuracion_local (
+--     id                      INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+--     nombre_local            VARCHAR(100) NOT NULL DEFAULT 'SIN ESPINAS',
+--     latitud                 NUMERIC(10, 7) NOT NULL DEFAULT -16.4090474,
+--     longitud                NUMERIC(10, 7) NOT NULL DEFAULT -71.5374510,
+--     radio_permitido_metros  INT NOT NULL DEFAULT 80 CHECK (radio_permitido_metros > 0),
+--     validar_gps             BOOLEAN NOT NULL DEFAULT FALSE,
+--     actualizado_en          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- );
+--
+-- INSERT INTO configuracion_local (id, nombre_local, latitud, longitud, radio_permitido_metros, validar_gps)
+-- VALUES (1, 'SIN ESPINAS', -16.4090474, -71.5374510, 80, FALSE)
+-- ON CONFLICT (id) DO NOTHING;

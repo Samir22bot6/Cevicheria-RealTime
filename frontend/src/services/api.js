@@ -42,11 +42,27 @@ export const api = {
   },
 
   // --- CLIENTE / QR ---
-  async abrirSesion(codigo_qr_token, cantidad_comensales = 1) {
+  async abrirSesion(codigo_qr_token, cantidad_comensales = 1, latitud = null, longitud = null) {
+    const body = { codigo_qr_token, cantidad_comensales };
+    if (latitud !== null && longitud !== null) {
+      body.latitud = latitud;
+      body.longitud = longitud;
+    }
     const res = await fetch(`${API_BASE_URL}/sesiones/abrir`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codigo_qr_token, cantidad_comensales })
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    data._statusCode = res.status;
+    return data;
+  },
+
+  async llamarMozo(id_sesion, numero_mesa, motivo) {
+    const res = await fetch(`${API_BASE_URL}/sesiones/${id_sesion}/llamar-mozo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numero_mesa, motivo })
     });
     return res.json();
   },
@@ -384,6 +400,21 @@ export const api = {
   async adminObtenerSesionMesa(id_mesa) {
     const res = await fetch(`${API_BASE_URL}/admin/mesas/${id_mesa}/sesion-activa`, {
       headers: getHeaders()
+    });
+    return res.json();
+  },
+
+  // --- ADMIN: CONFIGURACIÓN LOCAL / GEOCERCA GPS ---
+  async adminObtenerConfiguracion() {
+    const res = await fetch(`${API_BASE_URL}/admin/configuracion`, { headers: getHeaders() });
+    return res.json();
+  },
+
+  async adminActualizarConfiguracion(datos) {
+    const res = await fetch(`${API_BASE_URL}/admin/configuracion`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(datos)
     });
     return res.json();
   }

@@ -11,7 +11,7 @@ import {
 import { AuthController } from '../controllers/authController.js';
 import { AdminController } from '../controllers/adminController.js';
 import { PagosController } from '../controllers/pagosController.js';
-import { verificarAuth, requerirRol } from '../middlewares/authMiddleware.js';
+import { verificarAuth, requerirRol, validarSesionActiva } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 
@@ -24,11 +24,12 @@ router.post('/auth/login', AuthController.login);
 // 2. RUTAS PÚBLICAS / CLIENTES QR
 // ==========================================
 router.post('/sesiones/abrir', SesionController.abrir);
+router.post('/sesiones/:id_sesion/llamar-mozo', SesionController.llamarMozo);
 router.get('/sesiones/mesas', SesionController.listarMesas);
 router.get('/sesiones/:id_sesion/cuenta', CuentaController.obtener);
 
 router.get('/carta', CartaController.obtener);
-router.post('/pedidos', PedidoController.crear);
+router.post('/pedidos', validarSesionActiva, PedidoController.crear);
 router.post('/pagos', CuentaController.pagar);
 router.post('/resenas', ResenaController.registrar);
 router.post('/ia/recomendar', IaController.recomendar);
@@ -62,6 +63,10 @@ adminRouter.use(verificarAuth, requerirRol('ADMIN'));
 
 // Metadatos para formularios
 adminRouter.get('/meta/opciones-estaciones', AdminController.obtenerOpcionesYEstaciones);
+
+// Configuración del local / Geocerca GPS
+adminRouter.get('/configuracion', AdminController.obtenerConfiguracion);
+adminRouter.put('/configuracion', AdminController.actualizarConfiguracion);
 
 // Categorías
 adminRouter.get('/categorias', AdminController.listarCategorias);

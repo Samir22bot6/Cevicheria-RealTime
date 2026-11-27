@@ -129,6 +129,14 @@ export const mockDb = {
   detalle_pedidos: [],
   detalle_pedido_opciones: [],
   pagos: [],
-  resenas_experiencia: []
+  resenas_experiencia: [],
+  configuracion_local: {
+    id: 1,
+    nombre_local: 'SIN ESPINAS',
+    latitud: -16.4090474,
+    longitud: -71.5374510,
+    radio_permitido_metros: 80,
+    validar_gps: false
+  }
 };
 

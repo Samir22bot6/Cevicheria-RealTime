@@ -11,12 +11,30 @@ export const SesionController = {
     try {
       const token = req.body.codigo_qr_token || req.body.qrToken;
       const comensales = req.body.cantidad_comensales ?? 1;
+      const latitud = req.body.latitud ?? null;
+      const longitud = req.body.longitud ?? null;
 
       if (!token) {
         return res.status(400).json({ ok: false, error: 'codigo_qr_token o qrToken es requerido' });
       }
 
-      const data = await SesionService.abrirSesion(token, comensales);
+      const data = await SesionService.abrirSesion(token, comensales, latitud, longitud);
+      return res.status(200).json({ ok: true, data });
+    } catch (err) {
+      const status = err.statusCode || 500;
+      return res.status(status).json({
+        ok: false,
+        error: err.message,
+        codigo: err.codigo || undefined
+      });
+    }
+  },
+
+  async llamarMozo(req, res) {
+    try {
+      const { id_sesion } = req.params;
+      const { numero_mesa, motivo } = req.body || {};
+      const data = await SesionService.llamarMozo({ id_sesion, numero_mesa, motivo });
       return res.status(200).json({ ok: true, data });
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message });

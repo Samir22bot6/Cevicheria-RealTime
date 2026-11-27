@@ -1,4 +1,6 @@
 import { AdminService } from '../services/adminService.js';
+import { SesionService } from '../services/sesionService.js';
+import { getIO } from '../sockets/socketHandler.js';
 
 export const AdminController = {
   // --- Categorías ---
@@ -61,6 +63,28 @@ export const AdminController = {
   async actualizarPlato(req, res) {
     try {
       const data = await AdminService.actualizarPlato(req.params.id, req.body);
+      const io = getIO();
+      if (io) {
+        io.emit('carta_actualizada', { id_plato: Number(req.params.id), disponible: data?.disponible });
+      }
+      res.json({ ok: true, data });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  },
+
+  async obtenerConfiguracion(req, res) {
+    try {
+      const data = await SesionService.obtenerConfiguracionLocal();
+      res.json({ ok: true, data });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  },
+
+  async actualizarConfiguracion(req, res) {
+    try {
+      const data = await SesionService.actualizarConfiguracionLocal(req.body);
       res.json({ ok: true, data });
     } catch (err) {
       res.status(400).json({ ok: false, error: err.message });

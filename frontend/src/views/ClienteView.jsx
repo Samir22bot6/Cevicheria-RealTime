@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { api, socket } from '../services/api';
 import { useToast, ToastContainer } from '../components/Toast';
@@ -19,7 +19,11 @@ import {
   ShieldCheck,
   Check,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  MapPin,
+  Timer,
+  Users,
+  ShoppingCart
 } from 'lucide-react';
 
 export default function ClienteView() {
@@ -27,11 +31,24 @@ export default function ClienteView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { showToast, toasts, dismissToast } = useToast();
+  const timerRef = useRef(null);
 
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [errorSesion, setErrorSesion] = useState(null);
-  const [pestana, setPestana] = useState('carta'); // 'carta' | 'ia' | 'cuenta'
+  const [errorCodigo, setErrorCodigo] = useState(null); // 'GPS_REQUERIDO' | 'FUERA_DE_RANGO'
+  const [pestana, setPestana] = useState('carta');
+  const [tiempoRestante, setTiempoRestante] = useState(null); // segundos restantes de sesión
+
+  // Llamar mozo — botón flotante con opciones
+  const [mostrarOpcionesMozo, setMostrarOpcionesMozo] = useState(false);
+  const MOTIVOS_MOZO = [
+    '🌶️ Más ají / limón / cancha',
+    '🧻 Servilletas / Cubiertos',
+    '👨‍🍳 Asistencia de mozo',
+    '💳 Pedir la cuenta en efectivo',
+  ];
+  // (estado ya declarado arriba)
 
   // Carta y filtros
   const [carta, setCarta] = useState([]);
@@ -47,11 +64,13 @@ export default function ClienteView() {
   // Cuenta y pedidos en vivo
   const [cuenta, setCuenta] = useState(null);
 
-  // Chat IA
+  // Chat IA — Don Lucho con combo sugerido
   const [chatMensajes, setChatMensajes] = useState([
     {
       remitente: 'ia',
-      texto: '¡Hola causita! 🐟 Soy Don Lucho, tu asesor cevichero. ¿Buscas algo picantito, una combinación para compartir o quieres saber qué pesca fresca salió hoy?'
+      texto: '¡Hola causita! 🐟 Soy Don Lucho, tu maestro cevichero. ¿Buscas algo picantito, una combinación para compartir o quieres saber qué pesca fresca salió hoy?',
+      items_sugeridos: null,
+      total_estimado: null
     }
   ]);
   const [inputIa, setInputIa] = useState('');
@@ -63,16 +82,52 @@ export default function ClienteView() {
   const [comentarioResena, setComentarioResena] = useState('');
   const [resultadoResena, setResultadoResena] = useState(null);
 
-  // Modal Pago y Mercado Pago
+  // Modal Pago y Mercado Pago — División de cuenta
   const [mostrarModalPago, setMostrarModalPago] = useState(false);
-  const [metodoPago, setMetodoPago] = useState('YAPE'); // 'YAPE' | 'PLIN' | 'TARJETA_ONLINE' | 'POS_FISICO'
+  const [metodoPago, setMetodoPago] = useState('YAPE');
+  const [modoPago, setModoPago] = useState('completo'); // 'completo' | 'dividir'
+  const [personasDivision, setPersonasDivision] = useState(2);
   const [propina, setPropina] = useState(0);
   const [referenciaPasarela, setReferenciaPasarela] = useState('');
   const [procesandoPago, setProcesandoPago] = useState(false);
-  const [ordenCreadaMP, setOrdenCreadaMP] = useState(null); // { id_pago, checkout_url, modo_demo }
+  const [ordenCreadaMP, setOrdenCreadaMP] = useState(null);
   const [comprobantePago, setComprobantePago] = useState(null);
 
-  // 1. Iniciar sesión con código QR y registrar aislamiento en sessionStorage
+  // Temporizador de sesión
+  const actualizarTiempoRestante = (expira_en) => {
+    if (!expira_en) return;
+    const diff = Math.max(0, Math.floor((new Date(expira_en) - Date.now()) / 1000));
+    setTiempoRestante(diff);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((new Date(expira_en) - Date.now()) / 1000));
+      setTiempoRestante(remaining);
+      if (remaining === 0) clearInterval(timerRef.current);
+    }, 15000); // actualizar cada 15s para no sobrecargar
+  };
+
+  const formatTiempo = (secs) => {
+    if (secs === null || secs === undefined) return '';
+    const m = Math.floor(secs / 60);
+    return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+  };
+
+  // GPS: obtener posición del cliente
+  const obtenerPosicion = () => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve({ latitud: null, longitud: null });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ latitud: pos.coords.latitude, longitud: pos.coords.longitude }),
+        () => resolve({ latitud: null, longitud: null }),
+        { timeout: 8000, maximumAge: 60000 }
+      );
+    });
+  };
+
+  // 1. Iniciar sesión con código QR y GPS
   const cargarSesionMesa = async () => {
     if (!qrToken) {
       setErrorSesion('No se proporcionó ningún código QR en la URL.');
@@ -82,12 +137,16 @@ export default function ClienteView() {
 
     sessionStorage.setItem('cevicheria_cliente_qr', qrToken);
     setErrorSesion(null);
+    setErrorCodigo(null);
     setCargando(true);
 
     try {
-      const res = await api.abrirSesion(qrToken, 1);
+      // Pedir ubicación GPS antes de abrir sesión
+      const { latitud, longitud } = await obtenerPosicion();
+      const res = await api.abrirSesion(qrToken, 1, latitud, longitud);
       if (res && res.ok && res.data) {
         setSesion(res.data);
+        if (res.data.expira_en) actualizarTiempoRestante(res.data.expira_en);
         socket.emit('unirse_sesion', res.data.id_sesion);
 
         // Cargar carta y cuenta inicial
@@ -113,6 +172,9 @@ export default function ClienteView() {
         if (idPagoUrl) {
           confirmarRetornoDesdeUrl(idPagoUrl, orderIdUrl, paymentIdUrl, statusUrl, res.data.id_sesion);
         }
+      } else if (res?._statusCode === 403 || res?.codigo === 'GPS_REQUERIDO' || res?.codigo === 'FUERA_DE_RANGO') {
+        setErrorCodigo(res.codigo || 'FUERA_DE_RANGO');
+        setErrorSesion(res.error || 'Debes estar dentro de SIN ESPINAS para ordenar en mesa.');
       } else {
         const msg = res?.error || res?.message || 'No fue posible abrir la sesión de la mesa.';
         setErrorSesion(msg);
@@ -131,6 +193,8 @@ export default function ClienteView() {
 
   useEffect(() => {
     cargarSesionMesa();
+    // Cleanup timer al desmontar
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [qrToken]);
 
   // Función para confirmar retorno de pasarela
@@ -178,6 +242,11 @@ export default function ClienteView() {
       });
     });
 
+    // Refrescar carta cuando el admin actualice disponibilidad
+    socket.on('carta_actualizada', () => {
+      api.obtenerCarta().then(r => { if (r.ok) setCarta(r.data); });
+    });
+
     socket.on('pago_procesado', () => {
       api.obtenerCuenta(sesion.id_sesion).then(r => {
         if (r.ok) setCuenta(r.data);
@@ -199,6 +268,7 @@ export default function ClienteView() {
 
     return () => {
       socket.off('estado_plato_actualizado');
+      socket.off('carta_actualizada');
       socket.off('pago_procesado');
       socket.off('pago_confirmado');
     };
@@ -312,7 +382,12 @@ export default function ClienteView() {
 
       const res = await api.consultarIA(textoUsuario, contexto);
       if (res.ok && res.data) {
-        setChatMensajes(prev => [...prev, { remitente: 'ia', texto: res.data.respuesta }]);
+        setChatMensajes(prev => [...prev, {
+          remitente: 'ia',
+          texto: res.data.mensaje_lucho || res.data.respuesta || '¡Excelente elección, causa!',
+          items_sugeridos: res.data.items_sugeridos || [],
+          total_estimado: res.data.total_estimado || null
+        }]);
       }
     } catch (err) {
       setChatMensajes(prev => [
@@ -330,11 +405,15 @@ export default function ClienteView() {
     setProcesandoPago(true);
 
     try {
+      const montoAPagar = modoPago === 'dividir'
+        ? parseFloat((cuenta.saldo_pendiente / personasDivision).toFixed(2))
+        : cuenta.saldo_pendiente;
+
       const res = await api.crearOrdenMercadoPago({
         id_sesion: sesion.id_sesion,
         qr_token: qrToken,
         metodo_preferido: metodoPago === 'POS_FISICO' ? 'POS_FISICO' : metodoPago,
-        monto: cuenta.saldo_pendiente,
+        monto: montoAPagar,
         propina: Number(propina) || 0
       });
 
@@ -399,12 +478,16 @@ export default function ClienteView() {
     }
 
     // Si es POS Mozo o pago tradicional
+    const montoAPagar = modoPago === 'dividir'
+      ? parseFloat(((cuenta.saldo_pendiente / personasDivision)).toFixed(2))
+      : cuenta.saldo_pendiente;
+
     setProcesandoPago(true);
     try {
       const res = await api.pagar({
         id_sesion: sesion.id_sesion,
         metodo_pago: metodoPago,
-        monto: cuenta.saldo_pendiente,
+        monto: montoAPagar,
         propina: Number(propina) || 0,
         referencia_pasarela: referenciaPasarela.trim() || undefined
       });
@@ -446,14 +529,28 @@ export default function ClienteView() {
     }
   };
 
-  const llamarMozo = () => {
+  const llamarMozo = async (motivo) => {
+    const motivoFinal = motivo || '👨‍🍳 Asistencia de mozo';
+    socket.emit('llamar_mozo', {
+      tipo: 'LLAMAR_MOZO',
+      numero_mesa: sesion?.numero_mesa,
+      id_sesion: sesion?.id_sesion,
+      motivo: motivoFinal,
+      mensaje: `Mesa ${sesion?.numero_mesa}: ${motivoFinal}`
+    });
+    // También emitir backward-compat
     socket.emit('solicitar_atencion', {
       tipo: 'LLAMAR_MOZO',
       numero_mesa: sesion?.numero_mesa,
       id_sesion: sesion?.id_sesion,
-      mensaje: `Mesa ${sesion?.numero_mesa} solicita atención de mozo`
+      mensaje: `Mesa ${sesion?.numero_mesa}: ${motivoFinal}`
     });
-    showToast('info', '🔔 Mozo notificado', `El mozo se acercará en breve a la Mesa ${sesion?.numero_mesa}`);
+    // Llamada REST de respaldo
+    if (sesion?.id_sesion) {
+      api.llamarMozo(sesion.id_sesion, sesion.numero_mesa, motivoFinal).catch(() => {});
+    }
+    setMostrarOpcionesMozo(false);
+    showToast('success', '🔔 Mozo notificado', `Un mozo se acercará en breve a tu mesa`);
   };
 
   if (cargando) {
@@ -469,6 +566,34 @@ export default function ClienteView() {
   }
 
   if (errorSesion) {
+    // Pantalla especial para error GPS (dentro del local)
+    if (errorCodigo === 'GPS_REQUERIDO' || errorCodigo === 'FUERA_DE_RANGO') {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-gradient-to-b from-ocean-900 to-ocean-800">
+          <div className="bg-white p-7 rounded-3xl shadow-2xl border border-ocean-100 max-w-sm w-full">
+            <div className="w-16 h-16 bg-ocean-100 text-ocean-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <MapPin className="w-8 h-8" />
+            </div>
+            <h2 className="text-lg font-black text-ocean-900 mb-2">Acceso exclusivo en local</h2>
+            <p className="text-sm text-slate-600 mb-5 leading-relaxed">
+              Para ordenar en mesa debes estar dentro de <span className="font-bold text-ocean-700">SIN ESPINAS</span>.
+              Acércate al restaurante y vuelve a escanear el QR.
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 text-left">
+              <p className="text-xs text-amber-700 font-medium break-words">{errorSesion}</p>
+            </div>
+            <button
+              onClick={cargarSesionMesa}
+              className="w-full bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-3 px-4 rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-md"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reintentar ubicación
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-slate-50">
         <div className="bg-white p-6 rounded-2xl shadow-xl border border-red-100 max-w-sm w-full">
@@ -512,17 +637,20 @@ export default function ClienteView() {
             <h1 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5 leading-tight">
               Mesa {sesion?.numero_mesa || 'M-??'}
               <span className="inline-block w-2 h-2 rounded-full bg-lime-500 animate-pulse"></span>
+              {tiempoRestante !== null && (
+                <span className={`ml-1 flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                  tiempoRestante < 900
+                    ? 'bg-amber-100 text-amber-700 border-amber-300'
+                    : 'bg-ocean-100 text-ocean-700 border-ocean-200'
+                }`}>
+                  <Timer className="w-2.5 h-2.5" />
+                  {formatTiempo(tiempoRestante)}
+                </span>
+              )}
             </h1>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={llamarMozo}
-            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-full transition"
-          >
-            <Bell className="w-3.5 h-3.5 text-amber-500" />
-            Mozo
-          </button>
           <Link
             to="/"
             className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
@@ -604,16 +732,41 @@ export default function ClienteView() {
         {/* ==================== PESTAÑA 2: ASISTENTE IA ==================== */}
         {pestana === 'ia' && (
           <div className="flex flex-col h-[70vh]">
-            <div className="bg-ocean-50 border border-ocean-100 rounded-xl p-3 mb-3 flex items-center gap-2 text-xs text-ocean-800">
-              <Sparkles className="w-4 h-4 text-ocean-600 flex-shrink-0" />
-              <span>Pregúntale a Don Lucho por maridajes, pescados del día o combinaciones.</span>
+            <div className="bg-gradient-to-r from-ocean-800 to-ocean-700 rounded-xl p-3 mb-3 flex items-center gap-2 text-xs text-white shadow-sm">
+              <ChefHat className="w-5 h-5 text-lime-400 flex-shrink-0" />
+              <div>
+                <span className="font-bold block">Don Lucho — Maestro Cevichero 🐟</span>
+                <span className="text-ocean-200 text-[10px]">Pídeme un combo, maridaje o lo que se te antoje causa</span>
+              </div>
+            </div>
+
+            {/* Botones rápidos */}
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar">
+              {[
+                '🍽️ Ármame algo para 2 con S/ 70',
+                '🌊 Algo fresco y sin mucho picante',
+                '🤕 Para curar la resaca'
+              ].map(sugerencia => (
+                <button
+                  key={sugerencia}
+                  onClick={() => {
+                    setInputIa(sugerencia);
+                    setTimeout(() => {
+                      document.getElementById('ia-form')?.requestSubmit();
+                    }, 50);
+                  }}
+                  className="whitespace-nowrap bg-ocean-100 text-ocean-800 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-ocean-200 hover:bg-ocean-200 transition flex-shrink-0"
+                >
+                  {sugerencia}
+                </button>
+              ))}
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-1">
               {chatMensajes.map((m, idx) => (
                 <div
                   key={idx}
-                  className={`flex ${m.remitente === 'usuario' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex flex-col ${m.remitente === 'usuario' ? 'items-end' : 'items-start'}`}
                 >
                   <div
                     className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
@@ -624,6 +777,49 @@ export default function ClienteView() {
                   >
                     {m.texto}
                   </div>
+                  {/* Tarjeta de combo sugerido por Don Lucho */}
+                  {m.remitente === 'ia' && m.items_sugeridos && m.items_sugeridos.length > 0 && (
+                    <div className="mt-2 w-full max-w-[90%] bg-white border border-lime-300 rounded-2xl p-3 shadow-sm">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Sparkles className="w-3.5 h-3.5 text-lime-600" />
+                        <span className="text-[11px] font-bold text-lime-700">Combo sugerido por Don Lucho</span>
+                      </div>
+                      <div className="space-y-1 mb-2">
+                        {m.items_sugeridos.map((item, i) => (
+                          <div key={i} className="flex justify-between text-xs text-slate-700">
+                            <span>{item.cantidad}x {item.nombre_plato}</span>
+                            <span className="font-semibold">S/ {Number(item.precio_unitario).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t border-lime-200 pt-1.5 flex justify-between text-xs font-bold text-ocean-800">
+                        <span>Total estimado</span>
+                        <span>S/ {Number(m.total_estimado || 0).toFixed(2)}</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const nuevosItems = m.items_sugeridos.map(item => ({
+                            id_temporal: Date.now() + Math.random(),
+                            id_plato: item.id_plato,
+                            nombre_plato: item.nombre_plato,
+                            precio_base: Number(item.precio_unitario),
+                            cantidad: item.cantidad,
+                            opciones_ids: item.opciones_ids || [],
+                            opciones_nombres: item.nombres_opciones || [],
+                            observaciones_item: '',
+                            subtotal: Number(item.precio_unitario) * item.cantidad
+                          }));
+                          setCarrito(prev => [...prev, ...nuevosItems]);
+                          setPestana('carta');
+                          showToast('success', '🛒 Combo agregado', 'Los platos de Don Lucho fueron al carrito');
+                        }}
+                        className="mt-2.5 w-full bg-lime-500 hover:bg-lime-600 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                        Agregar todo al carrito
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
               {consultandoIa && (
@@ -638,7 +834,7 @@ export default function ClienteView() {
               )}
             </div>
 
-            <form onSubmit={enviarPreguntaIa} className="mt-3 flex gap-2">
+            <form id="ia-form" onSubmit={enviarPreguntaIa} className="mt-3 flex gap-2">
               <input
                 type="text"
                 value={inputIa}
@@ -788,6 +984,41 @@ export default function ClienteView() {
               Pedir a Cocina <ChefHat className="w-4 h-4" />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* BOTÓN FLOTANTE LLAMAR MOZO */}
+      {sesion && (
+        <div className="fixed bottom-20 right-4 max-w-md z-40" style={{ right: 'max(1rem, calc(50vw - 14rem))' }}>
+          {/* Panel de motivos */}
+          {mostrarOpcionesMozo && (
+            <div className="mb-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-2">
+              <div className="bg-ocean-700 text-white px-4 py-2.5 flex items-center justify-between">
+                <span className="text-xs font-bold">¿En qué te ayudamos?</span>
+                <button onClick={() => setMostrarOpcionesMozo(false)} className="p-0.5 rounded-full hover:bg-ocean-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="p-2 space-y-1">
+                {MOTIVOS_MOZO.map(motivo => (
+                  <button
+                    key={motivo}
+                    onClick={() => llamarMozo(motivo)}
+                    className="w-full text-left text-xs font-medium text-slate-700 hover:bg-ocean-50 hover:text-ocean-800 px-3 py-2.5 rounded-xl transition"
+                  >
+                    {motivo}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => setMostrarOpcionesMozo(v => !v)}
+            className="bg-ocean-700 hover:bg-ocean-800 text-white font-bold text-xs px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 transition border-2 border-ocean-500"
+          >
+            <Bell className="w-4 h-4 text-amber-300" />
+            Llamar Mozo
+          </button>
         </div>
       )}
 
@@ -951,11 +1182,68 @@ export default function ClienteView() {
               </button>
             </div>
 
+            {/* Modalidad de pago: Completo o Dividir */}
+            <div className="flex bg-slate-100 p-1 rounded-xl mb-3">
+              <button
+                type="button"
+                onClick={() => setModoPago('completo')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition ${
+                  modoPago === 'completo' ? 'bg-white text-ocean-800 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                Cuenta completa
+              </button>
+              <button
+                type="button"
+                onClick={() => setModoPago('dividir')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
+                  modoPago === 'dividir' ? 'bg-white text-ocean-800 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                Dividir cuenta
+              </button>
+            </div>
+
+            {modoPago === 'dividir' && (
+              <div className="bg-ocean-50 border border-ocean-200 rounded-xl p-3 mb-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-ocean-900">¿Entre cuántos dividen?</span>
+                  <span className="text-xs font-extrabold text-ocean-700">{personasDivision} personas</span>
+                </div>
+                <div className="flex gap-1.5 justify-between">
+                  {[2, 3, 4, 5, 6, 7, 8].map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setPersonasDivision(n)}
+                      className={`flex-1 py-1 rounded-lg text-xs font-bold transition ${
+                        personasDivision === n
+                          ? 'bg-ocean-600 text-white'
+                          : 'bg-white text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-ocean-700 mt-2 text-center font-medium">
+                  Cada persona paga: S/ {((cuenta?.saldo_pendiente || 0) / personasDivision).toFixed(2)}
+                </p>
+              </div>
+            )}
+
             {/* Resumen de monto */}
             <div className="bg-slate-50 rounded-xl p-3 text-center mb-4 border border-slate-100">
-              <span className="text-xs text-slate-500">Monto total a pagar</span>
+              <span className="text-xs text-slate-500">
+                {modoPago === 'dividir' ? `Tu parte (${personasDivision} personas)` : 'Monto total a pagar'}
+              </span>
               <p className="text-2xl font-black text-slate-900">
-                S/ {((cuenta?.saldo_pendiente || 0) + (Number(propina) || 0)).toFixed(2)}
+                S/ {(
+                  (modoPago === 'dividir'
+                    ? (cuenta?.saldo_pendiente || 0) / personasDivision
+                    : (cuenta?.saldo_pendiente || 0)) + (Number(propina) || 0)
+                ).toFixed(2)}
               </p>
               {Number(propina) > 0 && (
                 <span className="text-xs text-slate-400">
@@ -1054,7 +1342,11 @@ export default function ClienteView() {
                   <CreditCard className="w-4 h-4" />
                   {procesandoPago
                     ? 'Generando Orden...'
-                    : `Pagar S/ ${((cuenta?.saldo_pendiente || 0) + (Number(propina) || 0)).toFixed(2)} con Mercado Pago`}
+                    : `Pagar S/ ${(
+                        (modoPago === 'dividir'
+                          ? (cuenta?.saldo_pendiente || 0) / personasDivision
+                          : (cuenta?.saldo_pendiente || 0)) + (Number(propina) || 0)
+                      ).toFixed(2)} con Mercado Pago`}
                 </button>
 
                 {/* Opción POS Físico */}
