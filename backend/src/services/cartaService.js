@@ -55,7 +55,16 @@ export const CartaService = {
             platos: (cat.platos || []).map(p => ({
               ...p,
               estacion_nombre: p.estaciones_cocina?.nombre,
-              grupos_opciones: (p.plato_grupos_opciones || []).map(pgo => pgo.grupos_opciones)
+              grupos_opciones: (p.plato_grupos_opciones || []).map(pgo => {
+                const g = pgo.grupos_opciones;
+                if (!g) return null;
+                const opciones = g.opciones || g.opciones_personalizacion || [];
+                return {
+                  ...g,
+                  opciones,
+                  opciones_personalizacion: opciones
+                };
+              }).filter(Boolean)
             }))
           }));
         }

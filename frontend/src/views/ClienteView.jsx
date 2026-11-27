@@ -190,9 +190,19 @@ export default function ClienteView() {
       }
 
       if (res && res.ok && res.data) {
-        setSesion(res.data);
+        setSesion({
+          ...res.data,
+          modo_demo_pagos: res.data.modo_demo_pagos !== false
+        });
         if (res.data.expira_en) actualizarTiempoRestante(res.data.expira_en);
         socket.emit('unirse_sesion', res.data.id_sesion);
+
+        // Consultar configuración pública para sincronizar modo_demo_pagos en tiempo real
+        api.obtenerConfigPublica().then(cfgRes => {
+          if (cfgRes?.ok && cfgRes.data?.modo_demo_pagos !== undefined) {
+            setSesion(prev => prev ? ({ ...prev, modo_demo_pagos: cfgRes.data.modo_demo_pagos !== false }) : prev);
+          }
+        }).catch(() => {});
 
         // Cargar cuenta de la mesa
         const resCuenta = await api.obtenerCuenta(res.data.id_sesion);
@@ -347,14 +357,16 @@ export default function ClienteView() {
     // Preseleccionar opciones obligatorias por defecto (ej. Sin Ají, Pesca del Día)
     const defaults = [];
     (plato.grupos_opciones || []).forEach(grupo => {
-      if (grupo.es_obligatorio && grupo.opciones && grupo.opciones.length > 0) {
-        defaults.push(grupo.opciones[0].id_opcion);
+      const ops = grupo.opciones || grupo.opciones_personalizacion || [];
+      if (grupo.es_obligatorio && ops.length > 0) {
+        defaults.push(ops[0].id_opcion);
       }
     });
     setOpcionesElegidas(defaults);
   };
 
   const alternarOpcion = (grupo, id_opcion) => {
+    const ops = grupo.opciones || grupo.opciones_personalizacion || [];
     if (grupo.seleccion_multiple) {
       if (opcionesElegidas.includes(id_opcion)) {
         setOpcionesElegidas(opcionesElegidas.filter(id => id !== id_opcion));
@@ -363,7 +375,7 @@ export default function ClienteView() {
       }
     } else {
       // Reemplazar opción de este grupo
-      const idsGrupo = grupo.opciones.map(o => o.id_opcion);
+      const idsGrupo = ops.map(o => o.id_opcion);
       const restantes = opcionesElegidas.filter(id => !idsGrupo.includes(id));
       setOpcionesElegidas([...restantes, id_opcion]);
     }
@@ -376,7 +388,8 @@ export default function ClienteView() {
     let extrasTotal = 0;
     const nombresOpciones = [];
     (platoModal.grupos_opciones || []).forEach(g => {
-      g.opciones?.forEach(o => {
+      const ops = g.opciones || g.opciones_personalizacion || [];
+      ops.forEach(o => {
         if (opcionesElegidas.includes(o.id_opcion)) {
           extrasTotal += Number(o.precio_adicional || 0);
           nombresOpciones.push(o.nombre);
@@ -405,8 +418,8 @@ export default function ClienteView() {
   const iniciarPrepagoPedido = async () => {
     if (!sesion || carrito.length === 0) return;
 
-    // Si Modo Demo de Pagos está activo, mostrar selector de pago simulado en 1 clic
-    if (sesion?.modo_demo_pagos) {
+    // Si Modo Demo de Pagos está activo (por defecto true a menos que esté explícitamente desactivado)
+    if (sesion?.modo_demo_pagos !== false) {
       setMostrarModalDemoCheckout(true);
       return;
     }
@@ -1177,7 +1190,12 @@ export default function ClienteView() {
 
       {/* BOTÓN FLOTANTE LLAMAR MOZO */}
       {sesion && (
-        <div className="fixed bottom-20 right-4 max-w-md z-40" style={{ right: 'max(1rem, calc(50vw - 14rem))' }}>
+        <div
+          className={`fixed right-4 max-w-md z-40 transition-all duration-300 ${
+            carrito.length > 0 ? 'bottom-32' : 'bottom-20'
+          }`}
+          style={{ right: 'max(1rem, calc(50vw - 14rem))' }}
+        >
           {/* Panel de motivos */}
           {mostrarOpcionesMozo && (
             <div className="mb-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-2">
@@ -1269,49 +1287,52 @@ export default function ClienteView() {
 
             {/* Grupos de Opciones */}
             <div className="space-y-4 mb-4">
-              {platoModal.grupos_opciones?.map(grupo => (
-                <div key={grupo.id_grupo_opcion} className="border-t border-slate-100 pt-3">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-bold text-slate-700">{grupo.nombre}</span>
-                    <span className="text-[10px] text-slate-400">
-                      {grupo.es_obligatorio ? 'Obligatorio' : 'Opcional'}
-                    </span>
-                  </div>
+              {platoModal.grupos_opciones?.map(grupo => {
+                const opciones = grupo.opciones || grupo.opciones_personalizacion || [];
+                return (
+                  <div key={grupo.id_grupo_opcion} className="border-t border-slate-100 pt-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold text-slate-700">{grupo.nombre}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {grupo.es_obligatorio ? 'Obligatorio' : 'Opcional'}
+                      </span>
+                    </div>
 
-                  <div className="space-y-1.5">
-                    {grupo.opciones?.map(op => {
-                      const seleccionada = opcionesElegidas.includes(op.id_opcion);
-                      return (
-                        <div
-                          key={op.id_opcion}
-                          onClick={() => alternarOpcion(grupo, op.id_opcion)}
-                          className={`flex justify-between items-center p-2.5 rounded-xl border text-xs cursor-pointer transition ${
-                            seleccionada
-                              ? 'border-ocean-500 bg-ocean-50/70 text-ocean-900 font-medium'
-                              : 'border-slate-200 bg-white text-slate-700'
-                          }`}
-                        >
-                          <span>{op.nombre}</span>
-                          <div className="flex items-center gap-2">
-                            {Number(op.precio_adicional) > 0 && (
-                              <span className="text-[11px] text-slate-500">
-                                +S/ {Number(op.precio_adicional).toFixed(2)}
-                              </span>
-                            )}
-                            <div
-                              className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                                seleccionada ? 'border-ocean-600 bg-ocean-600' : 'border-slate-300'
-                              }`}
-                            >
-                              {seleccionada && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+                    <div className="space-y-1.5">
+                      {opciones.map(op => {
+                        const seleccionada = opcionesElegidas.includes(op.id_opcion);
+                        return (
+                          <div
+                            key={op.id_opcion}
+                            onClick={() => alternarOpcion(grupo, op.id_opcion)}
+                            className={`flex justify-between items-center p-2.5 rounded-xl border text-xs cursor-pointer transition ${
+                              seleccionada
+                                ? 'border-ocean-500 bg-ocean-50/70 text-ocean-900 font-medium'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                            }`}
+                          >
+                            <span>{op.nombre}</span>
+                            <div className="flex items-center gap-2">
+                              {Number(op.precio_adicional) > 0 && (
+                                <span className="text-[11px] text-slate-500">
+                                  +S/ {Number(op.precio_adicional).toFixed(2)}
+                                </span>
+                              )}
+                              <div
+                                className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                                  seleccionada ? 'border-ocean-600 bg-ocean-600' : 'border-slate-300'
+                                }`}
+                              >
+                                {seleccionada && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Observaciones */}
               <div className="border-t border-slate-100 pt-3">
