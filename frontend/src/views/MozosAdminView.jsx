@@ -130,43 +130,50 @@ export default function MozosAdminView() {
   // Modal Impresión QR
   const [impresionModal, setImpresionModal] = useState({ abierto: false, mesa: null, modoTodos: false });
 
-  // Utilidad de sonido Web Audio API (timbre de cocina y alertas)
+  // Utilidad de sonido híbrida: reproduce MP3 si existen en /sounds/ o sintetiza con Web Audio API
   const playNotificationSound = (tipo = 'alerta') => {
     if (!sonidoActivo) return;
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
 
-      if (tipo === 'listo') {
-        // Campana de cocina (plato listo en barra)
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(880, ctx.currentTime);
-        osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.12);
-        gain.gain.setValueAtTime(0.4, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.5);
-      } else {
-        // Alerta de mozo / llamado de mesa
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
-        gain.gain.setValueAtTime(0.5, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.6);
+    // 1. Intentar reproducir archivo MP3 personalizado si existe en /sounds/
+    const rutaAudio = tipo === 'listo' ? '/sounds/campana.mp3' : '/sounds/alerta.mp3';
+    const audio = new Audio(rutaAudio);
+    audio.play().catch(() => {
+      // 2. Si no hay archivo MP3 descargado, usar Web Audio API nativo (sintetizador)
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') {
+          ctx.resume();
+        }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        if (tipo === 'listo') {
+          // Campana de cocina (plato listo en barra)
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.12);
+          gain.gain.setValueAtTime(0.4, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.5);
+        } else {
+          // Alerta de mozo / llamado de mesa
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+          osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
+          gain.gain.setValueAtTime(0.5, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.6);
+        }
+      } catch (e) {
+        console.warn('Audio no disponible:', e);
       }
-    } catch (e) {
-      console.warn('Audio no disponible:', e);
-    }
+    });
   };
 
   const obtenerMiUbicacionGPS = () => {
