@@ -24,7 +24,10 @@ import {
   Timer,
   Users,
   ShoppingCart,
-  Zap
+  Zap,
+  Copy,
+  FileText,
+  QrCode
 } from 'lucide-react';
 
 export default function ClienteView() {
@@ -102,10 +105,15 @@ export default function ClienteView() {
   const [simulandoPago, setSimulandoPago] = useState(false);
   const [ticketConfirmadoCocina, setTicketConfirmadoCocina] = useState(null);
 
-  // Modo Demo de Pagos (Checkout instantáneo sin Mercado Pago)
-  const [mostrarModalDemoCheckout, setMostrarModalDemoCheckout] = useState(false);
-  const [metodoPagoDemo, setMetodoPagoDemo] = useState('YAPE_DEMO');
-  const [procesandoDemoCheckout, setProcesandoDemoCheckout] = useState(false);
+  // Modo Demo de Pagos y Simulación Dual (Digital / Presencial en Caja)
+  const [mostrarModalCheckoutSimulado, setMostrarModalCheckoutSimulado] = useState(false);
+  const [pestanaModalCheckout, setPestanaModalCheckout] = useState('digital'); // 'digital' | 'caja'
+  const [metodoPagoDigital, setMetodoPagoDigital] = useState('YAPE_DEMO');
+  const [metodoPagoCaja, setMetodoPagoCaja] = useState('EFECTIVO');
+  const [procesandoPagoSimulado, setProcesandoPagoSimulado] = useState(false);
+  const [ticketCajaGenerado, setTicketCajaGenerado] = useState(null);
+  const [mostrarModalTicketCaja, setMostrarModalTicketCaja] = useState(false);
+  const [codigoCopiado, setCodigoCopiado] = useState(false);
 
   // Temporizador de sesión
   const actualizarTiempoRestante = (expira_en) => {
@@ -317,7 +325,9 @@ export default function ClienteView() {
         numero_ticket: data.numero_ticket,
         mensaje: '¡Pago recibido! Tu pedido ya entró a cocina'
       });
+      setTicketCajaGenerado(prev => prev ? ({ ...prev, estado: 'PAGADO' }) : null);
       setMostrarModalPrepago(false);
+      setMostrarModalCheckoutSimulado(false);
       setPedidoEnPrepago(null);
       setCarrito([]);
       setPestana('cuenta');
@@ -332,6 +342,7 @@ export default function ClienteView() {
         id_pago: data.id_pago,
         referencia: data.referencia_pasarela
       });
+      setTicketCajaGenerado(prev => prev ? ({ ...prev, estado: 'PAGADO' }) : null);
       api.obtenerCuenta(sesion.id_sesion).then(r => {
         if (r.ok) setCuenta(r.data);
       });
@@ -415,99 +426,176 @@ export default function ClienteView() {
     setPlatoModal(null);
   };
 
-  const iniciarPrepagoPedido = async () => {
-    if (!sesion || carrito.length === 0) return;
+  const copiarCodigo = (codigo) => {
+    if (!codigo) return;
+    navigator.clipboard?.writeText(codigo);
+    setCodigoCopiado(true);
+    showToast('success', 'Código copiado', codigo);
+    setTimeout(() => setCodigoCopiado(false), 2500);
+  };
 
-    // Si Modo Demo de Pagos está activo (por defecto true a menos que esté explícitamente desactivado)
-    if (sesion?.modo_demo_pagos !== false) {
-      setMostrarModalDemoCheckout(true);
-      return;
-    }
+  const iniciarPrepagoPedido = () => {
+    setPestanaModalCheckout('digital');
+    setMostrarModalCheckoutSimulado(true);
+  };
 
-    // Flujo normal con pasarela Mercado Pago
+  const confirmarPagoDigitalSimulado = async () => {
+    if (!sesion) return;
+
     try {
-      setCargandoPrepago(true);
-      const itemsPayload = carrito.map(c => ({
-        id_plato: c.id_plato,
-        cantidad: c.cantidad,
-        observaciones_item: c.observaciones_item,
-        opciones_ids: c.opciones_ids
-      }));
+      setProcesandoPagoSimulado(true);
+      let idPedidoActivo = null;
+      let numTicket = null;
 
-      const res = await api.crearPedido({
-        id_sesion: sesion.id_sesion,
-        notas_generales: 'Pedido Prepago desde Carta QR',
-        items: itemsPayload,
-        qr_token: qrToken,
-        metodo_preferido: metodoPago
-      });
+      if (carrito.length > 0) {
+        const itemsPayload = carrito.map(c => ({
+          id_plato: c.id_plato,
+          cantidad: c.cantidad,
+          observaciones_item: c.observaciones_item,
+          opciones_ids: c.opciones_ids
+        }));
 
-      if (res.ok && res.data) {
-        setPedidoEnPrepago(res.data);
-        setMostrarModalPrepago(true);
+        const resPedido = await api.crearPedido({
+          id_sesion: sesion.id_sesion,
+          notas_generales: `Pedido Digital Simulado (${metodoPagoDigital})`,
+          items: itemsPayload,
+          qr_token: qrToken,
+          metodo_preferido: metodoPagoDigital
+        });
 
-        // Si Mercado Pago devolvió URL real (Checkout Pro)
-        if (!res.data.orden_pago?.modo_demo && res.data.orden_pago?.checkout_url) {
-          window.location.href = res.data.orden_pago.checkout_url;
+        if (!resPedido.ok || !resPedido.data?.id_pedido) {
+          showToast('error', 'Error al crear pedido', resPedido?.error || 'No se pudo crear el pedido');
+          return;
+        }
+        idPedidoActivo = resPedido.data.id_pedido;
+        numTicket = resPedido.data.codigo_ticket || resPedido.data.numero_ticket;
+      } else if (cuenta?.pedidos?.length > 0) {
+        const pedPend = cuenta.pedidos.find(p => p.estado === 'PENDIENTE_PAGO');
+        if (pedPend) {
+          idPedidoActivo = pedPend.id_pedido;
+          numTicket = pedPend.numero_ticket;
+        }
+      }
+
+      if (idPedidoActivo) {
+        const resDemo = await api.demoCheckout({
+          id_pedido: idPedidoActivo,
+          metodo_pago: metodoPagoDigital
+        });
+
+        if (resDemo.ok) {
+          setMostrarModalCheckoutSimulado(false);
+          setCarrito([]);
+          setPestana('cuenta');
+          setTicketConfirmadoCocina({
+            numero_ticket: numTicket,
+            mensaje: '¡Pago Digital Aprobado! Tu pedido ya entró a cocina 🐟'
+          });
+          showToast('success', '¡Pago Aprobado!', `Ticket ${numTicket} enviado a cocina`);
+          const cRes = await api.obtenerCuenta(sesion.id_sesion);
+          if (cRes.ok) setCuenta(cRes.data);
+        } else {
+          showToast('error', 'Error en simulación', resDemo.error || 'No se pudo aprobar el pago');
+        }
+      } else if (cuenta && cuenta.saldo_pendiente > 0) {
+        // Pago directo de cuenta completa
+        const resPago = await api.pagarCuenta({
+          id_sesion: sesion.id_sesion,
+          metodo_pago: metodoPagoDigital,
+          monto: cuenta.saldo_pendiente,
+          propina: 0,
+          referencia: `DIGITAL_SIMULADO_${Date.now()}`
+        });
+        if (resPago.ok) {
+          setMostrarModalCheckoutSimulado(false);
+          setPestana('cuenta');
+          showToast('success', '¡Cuenta Pagada!', 'Pago confirmado');
+          const cRes = await api.obtenerCuenta(sesion.id_sesion);
+          if (cRes.ok) setCuenta(cRes.data);
         }
       } else {
-        showToast('error', 'Error al generar pedido', res?.error || 'No se pudo crear el pedido');
+        showToast('info', 'Nada pendiente', 'No hay platos en el carrito ni saldo pendiente.');
       }
     } catch (e) {
-      showToast('error', 'Error al pedir', e.message || 'No se pudo generar el pedido.');
+      showToast('error', 'Error', e.message || 'Error en el checkout simulado');
     } finally {
-      setCargandoPrepago(false);
+      setProcesandoPagoSimulado(false);
     }
   };
 
-  const confirmarDemoCheckout = async () => {
-    if (!sesion || carrito.length === 0) return;
+  const generarTicketCajaPresencial = async () => {
+    if (!sesion) return;
 
     try {
-      setProcesandoDemoCheckout(true);
-      const itemsPayload = carrito.map(c => ({
-        id_plato: c.id_plato,
-        cantidad: c.cantidad,
-        observaciones_item: c.observaciones_item,
-        opciones_ids: c.opciones_ids
-      }));
+      setProcesandoPagoSimulado(true);
+      if (carrito.length > 0) {
+        const itemsPayload = carrito.map(c => ({
+          id_plato: c.id_plato,
+          cantidad: c.cantidad,
+          observaciones_item: c.observaciones_item,
+          opciones_ids: c.opciones_ids
+        }));
 
-      const resPedido = await api.crearPedido({
-        id_sesion: sesion.id_sesion,
-        notas_generales: `Pedido Prepago Demo (${metodoPagoDemo})`,
-        items: itemsPayload,
-        qr_token: qrToken,
-        metodo_preferido: metodoPagoDemo
-      });
-
-      if (!resPedido.ok || !resPedido.data?.id_pedido) {
-        showToast('error', 'Error al crear pedido', resPedido?.error || 'No se pudo crear el pedido');
-        return;
-      }
-
-      const resDemo = await api.demoCheckout({
-        id_pedido: resPedido.data.id_pedido,
-        metodo_pago: metodoPagoDemo
-      });
-
-      if (resDemo.ok) {
-        setMostrarModalDemoCheckout(false);
-        setCarrito([]);
-        setPestana('cuenta');
-        setTicketConfirmadoCocina({
-          numero_ticket: resPedido.data.numero_ticket,
-          mensaje: '¡Pago recibido! Tu pedido ya entró a cocina'
+        const resPedido = await api.crearPedido({
+          id_sesion: sesion.id_sesion,
+          notas_generales: `Pago en Caja Presencial (${metodoPagoCaja})`,
+          items: itemsPayload,
+          qr_token: qrToken,
+          metodo_preferido: `CAJA_${metodoPagoCaja}`
         });
-        showToast('success', '¡Pago aprobado en Modo Demo!', `Ticket ${resPedido.data.numero_ticket} enviado a cocina 🐟`);
+
+        if (!resPedido.ok || !resPedido.data?.id_pedido) {
+          showToast('error', 'Error al generar ticket', resPedido?.error || 'No se pudo crear el pedido');
+          return;
+        }
+
+        const ticketInfo = {
+          id_pedido: resPedido.data.id_pedido,
+          codigo_ticket: resPedido.data.codigo_ticket || resPedido.data.numero_ticket,
+          numero_ticket: resPedido.data.numero_ticket,
+          monto_total: resPedido.data.monto_total || totalCarrito,
+          items: carrito.map(c => ({
+            nombre: c.nombre_plato,
+            cantidad: c.cantidad,
+            subtotal: c.subtotal,
+            opciones: c.opciones_nombres?.join(', ')
+          })),
+          metodo_caja: metodoPagoCaja,
+          estado: 'PENDIENTE_PAGO',
+          fecha: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setTicketCajaGenerado(ticketInfo);
+        setMostrarModalCheckoutSimulado(false);
+        setMostrarModalTicketCaja(true);
+        setCarrito([]);
+        showToast('success', 'Ticket Generado', `Dicta el código ${ticketInfo.codigo_ticket} en caja`);
         const cRes = await api.obtenerCuenta(sesion.id_sesion);
         if (cRes.ok) setCuenta(cRes.data);
-      } else {
-        showToast('error', 'Error en simulación', resDemo.error || 'No se pudo aprobar el pedido en modo demo');
+      } else if (cuenta && cuenta.pedidos?.length > 0) {
+        const pedPend = cuenta.pedidos.find(p => p.estado === 'PENDIENTE_PAGO') || cuenta.pedidos[0];
+        const ticketInfo = {
+          id_pedido: pedPend.id_pedido,
+          codigo_ticket: pedPend.numero_ticket,
+          numero_ticket: pedPend.numero_ticket,
+          monto_total: cuenta.saldo_pendiente,
+          items: (pedPend.detalle_pedidos || []).map(d => ({
+            nombre: d.platos?.nombre || 'Plato',
+            cantidad: d.cantidad,
+            subtotal: 0
+          })),
+          metodo_caja: metodoPagoCaja,
+          estado: pedPend.estado,
+          fecha: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setTicketCajaGenerado(ticketInfo);
+        setMostrarModalCheckoutSimulado(false);
+        setMostrarModalTicketCaja(true);
       }
     } catch (e) {
-      showToast('error', 'Error', e.message || 'Error en el checkout de demo');
+      showToast('error', 'Error al generar ticket', e.message);
     } finally {
-      setProcesandoDemoCheckout(false);
+      setProcesandoPagoSimulado(false);
     }
   };
 
@@ -1138,11 +1226,14 @@ export default function ClienteView() {
             <div className="space-y-2">
               {cuenta && cuenta.saldo_pendiente > 0 ? (
                 <button
-                  onClick={() => setMostrarModalPago(true)}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition"
+                  onClick={() => {
+                    setPestanaModalCheckout('digital');
+                    setMostrarModalCheckoutSimulado(true);
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3.5 rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
                 >
                   <CreditCard className="w-4 h-4" />
-                  Pagar Cuenta (S/ {cuenta.saldo_pendiente.toFixed(2)})
+                  Simular Pago / Pagar Pedido (S/ {cuenta.saldo_pendiente.toFixed(2)})
                 </button>
               ) : (
                 <>
@@ -1177,23 +1268,23 @@ export default function ClienteView() {
               <p className="font-bold text-sm">S/ {totalCarrito.toFixed(2)}</p>
             </div>
             <button
-              onClick={iniciarPrepagoPedido}
-              disabled={cargandoPrepago}
-              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-md"
+              onClick={() => {
+                setPestanaModalCheckout('digital');
+                setMostrarModalCheckoutSimulado(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer"
             >
               <CreditCard className="w-4 h-4" />
-              {cargandoPrepago ? 'Generando...' : `Ir a Pagar (S/ ${totalCarrito.toFixed(2)})`}
+              Simular Pago (S/ {totalCarrito.toFixed(2)})
             </button>
           </div>
         </div>
       )}
 
       {/* BOTÓN FLOTANTE LLAMAR MOZO */}
-      {sesion && (
+      {sesion && carrito.length === 0 && (
         <div
-          className={`fixed right-4 max-w-md z-40 transition-all duration-300 ${
-            carrito.length > 0 ? 'bottom-32' : 'bottom-20'
-          }`}
+          className="fixed bottom-20 right-4 max-w-md z-40 transition-all duration-300"
           style={{ right: 'max(1rem, calc(50vw - 14rem))' }}
         >
           {/* Panel de motivos */}
@@ -1251,15 +1342,22 @@ export default function ClienteView() {
         </button>
 
         <button
-          onClick={() => setPestana('cuenta')}
+          onClick={() => {
+            if (carrito.length > 0) {
+              setPestanaModalCheckout('digital');
+              setMostrarModalCheckoutSimulado(true);
+            } else {
+              setPestana('cuenta');
+            }
+          }}
           className={`flex flex-col items-center py-1 text-xs font-semibold relative ${
-            pestana === 'cuenta' ? 'text-ocean-600' : 'text-slate-400'
+            pestana === 'cuenta' ? 'text-ocean-600' : 'text-slate-500'
           }`}
         >
-          <Receipt className="w-5 h-5 mb-0.5" />
-          Mi Cuenta
-          {cuenta && cuenta.saldo_pendiente > 0 && (
-            <span className="absolute top-0 right-2 w-2 h-2 bg-amber-500 rounded-full"></span>
+          <CreditCard className="w-5 h-5 mb-0.5 text-emerald-600" />
+          <span className="font-bold text-slate-800">Simular Pago</span>
+          {((cuenta && cuenta.saldo_pendiente > 0) || carrito.length > 0) && (
+            <span className="absolute top-0 right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping"></span>
           )}
         </button>
       </nav>
@@ -1377,138 +1475,264 @@ export default function ClienteView() {
         </div>
       )}
 
-      {/* ================= MODAL MODO DEMO CHECKOUT RÁPIDO ================= */}
-      {mostrarModalDemoCheckout && (
+      {/* ============================================================== */}
+      {/* 1. MODAL DE SIMULACIÓN DE CHECKOUT DUAL (DIGITAL / EN CAJA)   */}
+      {/* ============================================================== */}
+      {mostrarModalCheckoutSimulado && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-100">
-            <div className="text-center mb-5">
-              <div className="w-14 h-14 bg-lime-100 border border-lime-300 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Zap className="w-7 h-7 text-lime-700" />
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl animate-in zoom-in-95 border border-slate-100 max-h-[92vh] overflow-y-auto">
+            {/* Header del Modal */}
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">Simulación de Checkout</h3>
+                  <span className="text-[10px] text-slate-400 font-semibold block leading-none">Mesa {sesion?.numero_mesa || 'M-??'}</span>
+                </div>
               </div>
-              <span className="text-[11px] font-black text-lime-700 uppercase tracking-widest block mb-1">
-                ⚡ MODO DEMO DE PAGOS ACTIVO
-              </span>
-              <h3 className="text-lg font-black text-slate-900">
-                Selecciona método de pago
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Aprobación instantánea en 1 clic — ideal para presentaciones
-              </p>
+              <button
+                type="button"
+                onClick={() => setMostrarModalCheckoutSimulado(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-full cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="space-y-2 mb-4">
-              {[
-                { id: 'YAPE_DEMO', label: '📱 Yape (Simulación)' },
-                { id: 'PLIN_DEMO', label: '📱 Plin (Simulación)' },
-                { id: 'TARJETA_DEMO', label: '💳 Tarjeta Débito/Crédito (Simulación)' }
-              ].map(m => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setMetodoPagoDemo(m.id)}
-                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition border flex items-center justify-between cursor-pointer ${
-                    metodoPagoDemo === m.id
-                      ? 'bg-lime-50 text-lime-900 border-lime-500 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-lime-300'
-                  }`}
-                >
-                  <span>{m.label}</span>
-                  {metodoPagoDemo === m.id && <Check className="w-4 h-4 text-lime-600" />}
-                </button>
-              ))}
+            {/* Selector de Tipo de Pago (Pestaña Dual) */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl mb-4 border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setPestanaModalCheckout('digital')}
+                className={`flex-1 py-2 px-1 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  pestanaModalCheckout === 'digital'
+                    ? 'bg-white text-emerald-700 shadow-sm border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-lime-500" />
+                Pago Digital
+              </button>
+              <button
+                type="button"
+                onClick={() => setPestanaModalCheckout('caja')}
+                className={`flex-1 py-2 px-1 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  pestanaModalCheckout === 'caja'
+                    ? 'bg-white text-ocean-700 shadow-sm border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5 text-ocean-600" />
+                Pagar en Caja
+              </button>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 mb-5 text-center">
-              <span className="text-xs text-slate-500 font-medium">Total a pagar</span>
+            {/* Total a Pagar Resumido */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 mb-4 text-center">
+              <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider block">Total a Pagar</span>
               <p className="text-2xl font-black text-slate-900">
-                S/ {totalCarrito.toFixed(2)}
+                S/ {(carrito.length > 0 ? totalCarrito : (cuenta?.saldo_pendiente || 0)).toFixed(2)}
               </p>
+              {carrito.length > 0 && (
+                <span className="text-[10px] text-ocean-600 font-semibold">{carrito.length} plato(s) en comanda</span>
+              )}
             </div>
 
-            <button
-              type="button"
-              onClick={confirmarDemoCheckout}
-              disabled={procesandoDemoCheckout}
-              className="w-full bg-lime-400 hover:bg-lime-500 disabled:opacity-50 text-slate-950 font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm transition shadow-lg shadow-lime-200 flex items-center justify-center gap-2 mb-3 cursor-pointer"
-            >
-              <Zap className="w-4 h-4 fill-current" />
-              {procesandoDemoCheckout ? 'Confirmando y enviando...' : 'Confirmar Pago y Enviar a Cocina (Modo Demo)'}
-            </button>
+            {/* CONTENIDO 1: PAGO DIGITAL SIMULADO */}
+            {pestanaModalCheckout === 'digital' && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500 text-center leading-relaxed">
+                  Aprobación en <strong>1 clic</strong> sin pasarela real para presentación académica.
+                </p>
+
+                <div className="space-y-2">
+                  {[
+                    { id: 'YAPE_DEMO', label: '📱 Yape (Simulado)', desc: 'Envío simulado sin saldo real' },
+                    { id: 'PLIN_DEMO', label: '📱 Plin (Simulado)', desc: 'Envío simulado sin saldo real' },
+                    { id: 'TARJETA_DEMO', label: '💳 Tarjeta Débito/Crédito', desc: 'Simulación de cobro inmediato' }
+                  ].map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMetodoPagoDigital(m.id)}
+                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition border flex items-center justify-between cursor-pointer ${
+                        metodoPagoDigital === m.id
+                          ? 'bg-emerald-50 text-emerald-950 border-emerald-500 shadow-sm'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300'
+                      }`}
+                    >
+                      <div className="text-left">
+                        <span className="block">{m.label}</span>
+                        <span className="text-[10px] font-normal text-slate-400">{m.desc}</span>
+                      </div>
+                      {metodoPagoDigital === m.id && <Check className="w-4 h-4 text-emerald-600" />}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={confirmarPagoDigitalSimulado}
+                  disabled={procesandoPagoSimulado}
+                  className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm transition shadow-lg shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Zap className="w-4 h-4 fill-current text-lime-300" />
+                  {procesandoPagoSimulado ? 'Aprobando y enviando...' : 'Confirmar Pago y Enviar a Cocina'}
+                </button>
+              </div>
+            )}
+
+            {/* CONTENIDO 2: PAGO EN CAJA PRESENCIAL */}
+            {pestanaModalCheckout === 'caja' && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500 text-center leading-relaxed">
+                  Genera tu ticket con código corto para dictarlo y pagar en efectivo o POS físico en caja.
+                </p>
+
+                <div className="space-y-2">
+                  {[
+                    { id: 'EFECTIVO', label: '💵 Pago en Efectivo', desc: 'Pagar billetes/monedas en caja' },
+                    { id: 'POS_FISICO', label: '💳 Tarjeta en POS Físico', desc: 'Pagar con terminal POS en caja' }
+                  ].map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMetodoPagoCaja(m.id)}
+                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition border flex items-center justify-between cursor-pointer ${
+                        metodoPagoCaja === m.id
+                          ? 'bg-ocean-50 text-ocean-950 border-ocean-500 shadow-sm'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-ocean-300'
+                      }`}
+                    >
+                      <div className="text-left">
+                        <span className="block">{m.label}</span>
+                        <span className="text-[10px] font-normal text-slate-400">{m.desc}</span>
+                      </div>
+                      {metodoPagoCaja === m.id && <Check className="w-4 h-4 text-ocean-600" />}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={generarTicketCajaPresencial}
+                  disabled={procesandoPagoSimulado}
+                  className="w-full mt-2 bg-ocean-700 hover:bg-ocean-800 disabled:opacity-50 text-white font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm transition shadow-lg shadow-ocean-800/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" />
+                  {procesandoPagoSimulado ? 'Generando ticket...' : 'Generar Ticket para Pagar en Caja'}
+                </button>
+              </div>
+            )}
 
             <button
               type="button"
-              onClick={() => setMostrarModalDemoCheckout(false)}
-              disabled={procesandoDemoCheckout}
-              className="w-full text-xs text-slate-400 hover:text-slate-600 font-semibold py-1 cursor-pointer"
+              onClick={() => setMostrarModalCheckoutSimulado(false)}
+              className="w-full text-xs text-slate-400 hover:text-slate-600 font-bold py-2 mt-2 cursor-pointer"
             >
-              Cancelar y volver a la carta
+              Cancelar y volver
             </button>
           </div>
         </div>
       )}
 
-      {/* ================= MODAL DE PREPAGO OBLIGATORIO ================= */}
-      {mostrarModalPrepago && pedidoEnPrepago && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center animate-in zoom-in-95">
-            <div className="w-16 h-16 bg-ocean-100 text-ocean-700 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-              <CreditCard className="w-8 h-8" />
-            </div>
-
-            <span className="text-[11px] font-bold text-ocean-600 uppercase tracking-wider block mb-1">
-              Ticket: {pedidoEnPrepago.numero_ticket}
-            </span>
-            <h3 className="text-lg font-black text-slate-800 mb-1">
-              Esperando confirmación de pago...
-            </h3>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Tu pedido se enviará inmediatamente a cocina en cuanto se confirme el pago.
-            </p>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4 text-center">
-              <span className="text-xs text-slate-400">Total a pagar</span>
-              <p className="text-2xl font-black text-slate-900">
-                S/ {Number(pedidoEnPrepago.monto_total || 0).toFixed(2)}
+      {/* ============================================================== */}
+      {/* 2. MODAL DEL TICKET DIGITAL DE CAJA (CON CÓDIGO CORTO)         */}
+      {/* ============================================================== */}
+      {mostrarModalTicketCaja && ticketCajaGenerado && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-200 max-h-[92vh] overflow-y-auto">
+            {/* Header del Ticket */}
+            <div className="text-center pb-3 border-b border-dashed border-slate-200 mb-4">
+              <span className="text-[10px] font-extrabold tracking-widest text-ocean-600 uppercase block">CEVICHERÍA SIN ESPINAS</span>
+              <h3 className="text-base font-black text-slate-900 mt-0.5">TICKET DE COBRO EN CAJA</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Mesa {sesion?.numero_mesa || 'M-??'} • {ticketCajaGenerado.fecha || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
-              <div className="flex items-center justify-center gap-1.5 mt-2 text-xs text-slate-600">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                <span className="font-medium">Escuchando confirmación de pasarela...</span>
-              </div>
             </div>
 
-            {/* Si Mercado Pago retornó enlace directo de Checkout Pro */}
-            {pedidoEnPrepago.orden_pago?.checkout_url && (
-              <a
-                href={pedidoEnPrepago.orden_pago.checkout_url}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full mb-3 bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-3 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md"
-              >
-                Abrir Pasarela de Pago
-                <ExternalLink className="w-4 h-4" />
-              </a>
+            {/* Código Grande de Ticket */}
+            <div className="text-center my-4">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">CÓDIGO DE CAJA</span>
+              <div className="bg-slate-100 border-2 border-dashed border-ocean-300 rounded-2xl p-3.5 mb-2 flex items-center justify-center gap-3">
+                <span className="text-3xl font-mono font-black text-ocean-950 tracking-wider">
+                  {ticketCajaGenerado.codigo_ticket || ticketCajaGenerado.numero_ticket}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copiarCodigo(ticketCajaGenerado.codigo_ticket || ticketCajaGenerado.numero_ticket)}
+                  className="p-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 shadow-sm transition cursor-pointer"
+                  title="Copiar código"
+                >
+                  {codigoCopiado ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <span className="text-[10px] text-slate-500 font-medium">Dicta o muestra este código al cajero</span>
+            </div>
+
+            {/* Estado del Ticket */}
+            <div className="mb-4">
+              {ticketCajaGenerado.estado === 'PAGADO' ? (
+                <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5 text-emerald-800 font-extrabold text-xs">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ¡PAGO CONFIRMADO EN CAJA!
+                  </div>
+                  <p className="text-[11px] text-emerald-700 mt-0.5 font-medium">
+                    Tu pedido ya entró a cocina y está en preparación 🐟
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5 text-amber-900 font-extrabold text-xs">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                    PENDIENTE DE VERIFICACIÓN EN CAJA
+                  </div>
+                  <p className="text-[11px] text-amber-800 mt-0.5 font-medium">
+                    Cocina recibirá tu comanda en cuanto el cajero valide el cobro.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Detalle de Platos */}
+            {ticketCajaGenerado.items && ticketCajaGenerado.items.length > 0 && (
+              <div className="border-t border-b border-dashed border-slate-200 py-3 mb-4 space-y-1.5 text-xs">
+                {ticketCajaGenerado.items.map((it, idx) => (
+                  <div key={idx} className="flex justify-between items-baseline text-slate-700">
+                    <span><strong>{it.cantidad}x</strong> {it.nombre}</span>
+                    <span className="font-mono text-slate-900 font-bold">
+                      {it.subtotal ? `S/ ${Number(it.subtotal).toFixed(2)}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
 
-            {/* Botón discreto de modo demo para pruebas */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={simularPagoPrepagoExitoso}
-                disabled={simulandoPago}
-                className="w-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                {simulandoPago ? 'Confirmando...' : '⚡ Simular Pago Exitoso (Modo Demo)'}
-              </button>
+            {/* Total */}
+            <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-2xl p-3 mb-4">
+              <span className="text-xs font-bold text-slate-600">Total a Pagar en Caja</span>
+              <span className="text-2xl font-black text-slate-900">
+                S/ {Number(ticketCajaGenerado.monto_total || 0).toFixed(2)}
+              </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setMostrarModalPrepago(false)}
-              className="mt-3 text-xs text-slate-400 hover:text-slate-600 font-medium"
-            >
-              Cerrar y volver a la carta
-            </button>
+            {/* Botones de Acción */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarModalTicketCaja(false);
+                  setPestana('cuenta');
+                }}
+                className="w-full bg-ocean-700 hover:bg-ocean-800 text-white font-extrabold py-3 px-4 rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                Cerrar y Ver Seguimiento en Vivo
+              </button>
+            </div>
           </div>
         </div>
       )}

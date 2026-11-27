@@ -141,6 +141,26 @@ export const api = {
     return res.json();
   },
 
+  // --- CAJA Y TICKETS PRESENCIALES ---
+  async obtenerTicketsCaja() {
+    const res = await fetch(`${API_BASE_URL}/caja/tickets-pendientes`, {
+      headers: getHeaders()
+    });
+    return res.json();
+  },
+
+  async confirmarCobroCaja({ id_pedido, codigo_ticket, metodo_pago }) {
+    const res = await fetch(`${API_BASE_URL}/caja/confirmar-cobro`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getHeaders()
+      },
+      body: JSON.stringify({ id_pedido, codigo_ticket, metodo_pago })
+    });
+    return res.json();
+  },
+
   async enviarResena(datos) {
     const res = await fetch(`${API_BASE_URL}/resenas`, {
       method: 'POST',

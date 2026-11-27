@@ -11,6 +11,7 @@ import {
 import { AuthController } from '../controllers/authController.js';
 import { AdminController } from '../controllers/adminController.js';
 import { PagosController } from '../controllers/pagosController.js';
+import { CajaController } from '../controllers/cajaController.js';
 import { verificarAuth, requerirRol, validarSesionActiva } from '../middlewares/authMiddleware.js';
 
 const router = Router();
@@ -41,6 +42,10 @@ router.post('/pagos/confirmar-retorno', PagosController.confirmarRetorno);
 router.post('/pagos/demo-checkout', PagosController.demoCheckout);
 router.post('/pagos/simular-aprobacion/:id_pedido', PagosController.simularAprobacionPedido);
 router.post('/pagos/webhook', PagosController.webhook);
+
+// Gestión de Caja y Tickets Presenciales
+router.get('/caja/tickets-pendientes', CajaController.obtenerTicketsPendientes);
+router.post('/caja/confirmar-cobro', CajaController.confirmarCobro);
 
 // ==========================================
 // 3. KDS COCINA (Protegido para roles de cocina y admin)

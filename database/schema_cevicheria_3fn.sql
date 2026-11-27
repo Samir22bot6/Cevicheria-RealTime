@@ -395,3 +395,11 @@ ON CONFLICT (id) DO NOTHING;
 -- 5. Modo Demo de Pagos (aprobación en 1 clic para presentaciones)
 -- ALTER TABLE configuracion_local
 --   ADD COLUMN IF NOT EXISTS modo_demo_pagos BOOLEAN NOT NULL DEFAULT TRUE;
+--
+-- 6. Código de Ticket para Cobro en Caja Presencial
+-- ALTER TABLE pedidos
+--   ADD COLUMN IF NOT EXISTS codigo_ticket VARCHAR(20);
+--
+-- UPDATE pedidos
+--   SET codigo_ticket = numero_ticket
+--   WHERE codigo_ticket IS NULL;

@@ -13,7 +13,7 @@ export const PedidoService = {
     if (!id_sesion) throw new Error('id_sesion es requerido');
     if (!items || !items.length) throw new Error('El pedido debe tener al menos un ítem');
 
-    const numeroTicket = `TK-${Date.now().toString().slice(-6)}`;
+    const numeroTicket = `ESP-${Math.floor(1000 + Math.random() * 9000)}`;
     let montoTotal = 0;
     let pedidoId = null;
     const detalleCreado = [];
@@ -127,6 +127,7 @@ export const PedidoService = {
           ok: true,
           id_pedido: pedidoId,
           numero_ticket: numeroTicket,
+          codigo_ticket: numeroTicket,
           estado: 'PENDIENTE_PAGO',
           monto_total: Number(montoTotal.toFixed(2)),
           orden_pago: ordenPago,
@@ -225,6 +226,7 @@ export const PedidoService = {
       ok: true,
       id_pedido: pedidoId,
       numero_ticket: numeroTicket,
+      codigo_ticket: numeroTicket,
       estado: 'PENDIENTE_PAGO',
       monto_total: Number(montoTotal.toFixed(2)),
       orden_pago: ordenPago,
