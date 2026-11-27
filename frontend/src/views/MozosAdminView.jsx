@@ -130,6 +130,30 @@ export default function MozosAdminView() {
   // Modal Impresión QR
   const [impresionModal, setImpresionModal] = useState({ abierto: false, mesa: null, modoTodos: false });
 
+  // Modal Confirmación Custom (reemplazo de window.confirm)
+  const [modalConfirmacion, setModalConfirmacion] = useState({
+    abierto: false,
+    titulo: '',
+    mensaje: '',
+    tipo: 'peligro', // 'peligro' | 'advertencia' | 'info'
+    textoBoton: 'Confirmar',
+    onConfirmar: null
+  });
+
+  const abrirConfirmacion = ({ titulo, mensaje, tipo = 'peligro', textoBoton = 'Confirmar', onConfirmar }) => {
+    setModalConfirmacion({
+      abierto: true,
+      titulo,
+      mensaje,
+      tipo,
+      textoBoton,
+      onConfirmar: () => {
+        setModalConfirmacion(prev => ({ ...prev, abierto: false }));
+        if (onConfirmar) onConfirmar();
+      }
+    });
+  };
+
   // Utilidad de sonido híbrida: reproduce MP3 si existen en /sounds/ o sintetiza con Web Audio API
   const playNotificationSound = (tipo = 'alerta') => {
     if (!sonidoActivo) return;
@@ -500,16 +524,24 @@ export default function MozosAdminView() {
     }
   };
 
-  const eliminarGrupoOp = async (id_grupo) => {
-    if (!window.confirm('¿Deseas eliminar este grupo de opciones y todos sus extras?')) return;
-    try {
-      const res = await api.adminEliminarGrupoOpcion(id_grupo);
-      if (res.ok) {
-        setGruposOpciones(prev => prev.filter(g => g.id_grupo_opcion !== id_grupo));
-      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
-    } catch (e) {
-      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
-    }
+  const eliminarGrupoOp = (id_grupo) => {
+    abrirConfirmacion({
+      titulo: '¿Eliminar grupo de opciones?',
+      mensaje: 'Esta acción eliminará el grupo y todas sus opciones personalizadas asociadas.',
+      tipo: 'peligro',
+      textoBoton: 'Sí, eliminar grupo',
+      onConfirmar: async () => {
+        try {
+          const res = await api.adminEliminarGrupoOpcion(id_grupo);
+          if (res.ok) {
+            setGruposOpciones(prev => prev.filter(g => g.id_grupo_opcion !== id_grupo));
+            showToast('success', 'Grupo eliminado', 'El grupo de opciones fue removido.');
+          } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
+        } catch (e) {
+          showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
+        }
+      }
+    });
   };
 
   const guardarOpcionExtra = async (e) => {
@@ -550,24 +582,32 @@ export default function MozosAdminView() {
     }
   };
 
-  const eliminarOpcionExtra = async (id_opcion, id_grupo) => {
-    if (!window.confirm('¿Deseas eliminar esta opción?')) return;
-    try {
-      const res = await api.adminEliminarOpcionPersonalizacion(id_opcion);
-      if (res.ok) {
-        setGruposOpciones(prev => prev.map(g => {
-          if (g.id_grupo_opcion === id_grupo) {
-            return {
-              ...g,
-              opciones_personalizacion: g.opciones_personalizacion.filter(o => o.id_opcion !== id_opcion)
-            };
-          }
-          return g;
-        }));
+  const eliminarOpcionExtra = (id_opcion, id_grupo) => {
+    abrirConfirmacion({
+      titulo: '¿Eliminar opción?',
+      mensaje: '¿Deseas eliminar permanentemente esta opción de personalización?',
+      tipo: 'peligro',
+      textoBoton: 'Sí, eliminar',
+      onConfirmar: async () => {
+        try {
+          const res = await api.adminEliminarOpcionPersonalizacion(id_opcion);
+          if (res.ok) {
+            setGruposOpciones(prev => prev.map(g => {
+              if (g.id_grupo_opcion === id_grupo) {
+                return {
+                  ...g,
+                  opciones_personalizacion: g.opciones_personalizacion.filter(o => o.id_opcion !== id_opcion)
+                };
+              }
+              return g;
+            }));
+            showToast('success', 'Opción eliminada', 'La opción fue removida exitosamente.');
+          } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
+        } catch (e) {
+          showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
+        }
       }
-    } catch (e) {
-      showToast('error', 'Error', e.message || 'Ocurrió un error inesperado.');
-    }
+    });
   };
 
   // --- OPERACIONES: ZONAS Y MESAS ---
@@ -592,16 +632,24 @@ export default function MozosAdminView() {
     }
   };
 
-  const eliminarZona = async (id_zona) => {
-    if (!window.confirm('¿Seguro que deseas eliminar esta zona?')) return;
-    try {
-      const res = await api.adminEliminarZona(id_zona);
-      if (res.ok) {
-        setZonas(prev => prev.filter(z => z.id_zona !== id_zona));
-      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
-    } catch (err) {
-      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
-    }
+  const eliminarZona = (id_zona) => {
+    abrirConfirmacion({
+      titulo: '¿Eliminar zona?',
+      mensaje: '¿Seguro que deseas eliminar esta zona del salón? Las mesas asociadas podrían verse afectadas.',
+      tipo: 'peligro',
+      textoBoton: 'Sí, eliminar zona',
+      onConfirmar: async () => {
+        try {
+          const res = await api.adminEliminarZona(id_zona);
+          if (res.ok) {
+            setZonas(prev => prev.filter(z => z.id_zona !== id_zona));
+            showToast('success', 'Zona eliminada', 'La zona ha sido removida.');
+          } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
+        } catch (err) {
+          showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
+        }
+      }
+    });
   };
 
   const guardarMesa = async (e) => {
@@ -625,29 +673,44 @@ export default function MozosAdminView() {
     }
   };
 
-  const regenerarQr = async (id_mesa) => {
-    if (!window.confirm('¿Deseas generar un nuevo código QR? El código anterior quedará invalidado.')) return;
-    try {
-      const res = await api.adminRegenerarQrMesa(id_mesa);
-      if (res.ok) {
-        setMesas(prev => prev.map(m => m.id_mesa === id_mesa ? { ...m, codigo_qr_token: res.data.nuevo_codigo_qr_token } : m));
-        showToast('success', '✅ QR generado', 'Nuevo código QR generado exitosamente.');
-      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
-    } catch (err) {
-      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
-    }
+  const regenerarQr = (id_mesa) => {
+    abrirConfirmacion({
+      titulo: '¿Regenerar código QR?',
+      mensaje: 'El código QR anterior quedará invalidado y cualquier cliente que lo escanee necesitará el nuevo.',
+      tipo: 'advertencia',
+      textoBoton: 'Regenerar QR',
+      onConfirmar: async () => {
+        try {
+          const res = await api.adminRegenerarQrMesa(id_mesa);
+          if (res.ok) {
+            setMesas(prev => prev.map(m => m.id_mesa === id_mesa ? { ...m, codigo_qr_token: res.data.nuevo_codigo_qr_token } : m));
+            showToast('success', '✅ QR generado', 'Nuevo código QR generado exitosamente.');
+          } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
+        } catch (err) {
+          showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
+        }
+      }
+    });
   };
 
-  const eliminarMesa = async (id_mesa) => {
-    if (!window.confirm('¿Deseas eliminar esta mesa?')) return;
-    try {
-      const res = await api.adminEliminarMesa(id_mesa);
-      if (res.ok) {
-        setMesas(prev => prev.filter(m => m.id_mesa !== id_mesa));
-      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
-    } catch (err) {
-      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
-    }
+  const eliminarMesa = (id_mesa) => {
+    abrirConfirmacion({
+      titulo: '¿Eliminar mesa?',
+      mensaje: '¿Deseas eliminar permanentemente esta mesa del salón?',
+      tipo: 'peligro',
+      textoBoton: 'Sí, eliminar mesa',
+      onConfirmar: async () => {
+        try {
+          const res = await api.adminEliminarMesa(id_mesa);
+          if (res.ok) {
+            setMesas(prev => prev.filter(m => m.id_mesa !== id_mesa));
+            showToast('success', 'Mesa eliminada', 'La mesa ha sido removida.');
+          } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
+        } catch (err) {
+          showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
+        }
+      }
+    });
   };
 
   // --- OPERACIONES: PLATOS ---
@@ -684,17 +747,24 @@ export default function MozosAdminView() {
     }
   };
 
-  const eliminarPlato = async (id_plato) => {
-    if (!window.confirm('¿Deseas eliminar este plato?')) return;
-    try {
-      const res = await api.adminEliminarPlato(id_plato);
-      if (res.ok) {
-        showToast('success', 'Operación exitosa', res.data.mensaje);
-        api.adminListarPlatos().then(r => r.ok && setPlatos(r.data));
-      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
-    } catch (err) {
-      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
-    }
+  const eliminarPlato = (id_plato) => {
+    abrirConfirmacion({
+      titulo: '¿Eliminar plato?',
+      mensaje: '¿Deseas eliminar este plato de la carta de SIN ESPINAS? Esta acción no se puede deshacer.',
+      tipo: 'peligro',
+      textoBoton: 'Sí, eliminar plato',
+      onConfirmar: async () => {
+        try {
+          const res = await api.adminEliminarPlato(id_plato);
+          if (res.ok) {
+            showToast('success', 'Plato eliminado', res.data.mensaje || 'Plato eliminado exitosamente.');
+            api.adminListarPlatos().then(r => r.ok && setPlatos(r.data));
+          } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
+        } catch (err) {
+          showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
+        }
+      }
+    });
   };
 
   // --- OPERACIONES: CATEGORÍAS ---
@@ -719,16 +789,24 @@ export default function MozosAdminView() {
     }
   };
 
-  const eliminarCategoria = async (id_categoria) => {
-    if (!window.confirm('¿Deseas eliminar esta categoría?')) return;
-    try {
-      const res = await api.adminEliminarCategoria(id_categoria);
-      if (res.ok) {
-        setCategorias(prev => prev.filter(c => c.id_categoria !== id_categoria));
-      } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
-    } catch (err) {
-      showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
-    }
+  const eliminarCategoria = (id_categoria) => {
+    abrirConfirmacion({
+      titulo: '¿Eliminar categoría?',
+      mensaje: '¿Deseas eliminar esta categoría? Los platos asignados a ella quedarán sin categoría visible.',
+      tipo: 'peligro',
+      textoBoton: 'Sí, eliminar categoría',
+      onConfirmar: async () => {
+        try {
+          const res = await api.adminEliminarCategoria(id_categoria);
+          if (res.ok) {
+            setCategorias(prev => prev.filter(c => c.id_categoria !== id_categoria));
+            showToast('success', 'Categoría eliminada', 'La categoría ha sido removida.');
+          } else showToast('error', 'Error del servidor', res.error || 'Ocurrió un error inesperado.');
+        } catch (err) {
+          showToast('error', 'Error', err.message || 'Ocurrió un error inesperado.');
+        }
+      }
+    });
   };
 
   // --- IMPRESIÓN QR ---
@@ -2597,6 +2675,52 @@ export default function MozosAdminView() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL DE CONFIRMACIÓN ESTILIZADO (Reemplazo window.confirm)    */}
+      {/* ============================================================== */}
+      {modalConfirmacion.abierto && (
+        <div className="no-print fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-ocean-950 border border-ocean-800 text-white rounded-3xl p-6 max-w-sm w-full shadow-2xl relative overflow-hidden">
+            <div className={`absolute top-0 left-0 right-0 h-1.5 ${modalConfirmacion.tipo === 'peligro' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+            
+            <div className="flex items-start gap-3.5 mb-4 mt-1">
+              <div className={`p-2.5 rounded-2xl shrink-0 ${modalConfirmacion.tipo === 'peligro' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
+                <AlertCircle size={22} strokeWidth={2.2} />
+              </div>
+              <div>
+                <h4 className="text-base font-extrabold text-white leading-snug">
+                  {modalConfirmacion.titulo}
+                </h4>
+                <p className="text-xs text-ocean-300 mt-1 leading-relaxed">
+                  {modalConfirmacion.mensaje}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setModalConfirmacion(prev => ({ ...prev, abierto: false }))}
+                className="flex-1 py-2.5 px-3 bg-ocean-900/80 hover:bg-ocean-800 text-ocean-200 font-bold text-xs rounded-xl transition-all border border-ocean-700/50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={modalConfirmacion.onConfirmar}
+                className={`flex-1 py-2.5 px-3 font-extrabold text-xs rounded-xl shadow-lg transition-all ${
+                  modalConfirmacion.tipo === 'peligro'
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-900/40'
+                    : 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-900/40'
+                }`}
+              >
+                {modalConfirmacion.textoBoton}
+              </button>
+            </div>
           </div>
         </div>
       )}
