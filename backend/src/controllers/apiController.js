@@ -65,12 +65,14 @@ export const CartaController = {
 export const PedidoController = {
   async crear(req, res) {
     try {
-      const { id_sesion, notas_generales, items, origen } = req.body;
+      const { id_sesion, notas_generales, items, origen, qr_token, metodo_preferido } = req.body;
       const resultado = await PedidoService.crearPedido({
         id_sesion,
         notas_generales,
         items,
-        origen
+        origen,
+        qr_token,
+        metodo_preferido
       });
       return res.status(201).json({ ok: true, data: resultado });
     } catch (err) {

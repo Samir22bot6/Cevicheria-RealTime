@@ -119,10 +119,11 @@ CREATE TABLE pedidos (
     id_sesion          UUID        NOT NULL REFERENCES sesiones_mesa(id_sesion) ON UPDATE CASCADE ON DELETE RESTRICT,
     numero_ticket      VARCHAR(20) NOT NULL UNIQUE,
     origen             VARCHAR(15) NOT NULL DEFAULT 'QR_CLIENTE' CHECK (origen IN ('QR_CLIENTE', 'MOZO_APP')),
-    estado             VARCHAR(20) NOT NULL DEFAULT 'RECIBIDO' 
-                       CHECK (estado IN ('RECIBIDO', 'EN_PREPARACION', 'LISTO', 'ENTREGADO', 'CANCELADO')),
+    estado             VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE_PAGO' 
+                       CHECK (estado IN ('PENDIENTE_PAGO', 'RECIBIDO', 'PENDIENTE', 'EN_PREPARACION', 'LISTO', 'ENTREGADO', 'CANCELADO')),
     notas_generales    TEXT,
     creado_en          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    hora_confirmacion  TIMESTAMPTZ,
     iniciado_cocina_en TIMESTAMPTZ,
     listo_en           TIMESTAMPTZ,
     entregado_en       TIMESTAMPTZ
@@ -210,7 +211,7 @@ JOIN estaciones_cocina ec ON pl.id_estacion = ec.id_estacion
 LEFT JOIN detalle_pedido_opciones dpo ON dp.id_detalle = dpo.id_detalle
 LEFT JOIN opciones_personalizacion op ON dpo.id_opcion = op.id_opcion
 WHERE dp.estado_estacion IN ('PENDIENTE', 'PREPARANDO', 'LISTO')
-  AND p.estado <> 'CANCELADO'
+  AND p.estado NOT IN ('PENDIENTE_PAGO', 'CANCELADO', 'ENTREGADO')
 GROUP BY dp.id_detalle, p.id_pedido, p.numero_ticket, m.numero_mesa, 
          ec.nombre, pl.nombre, dp.cantidad, dp.estado_estacion, 
          dp.observaciones_item, p.creado_en
@@ -329,6 +330,51 @@ ON CONFLICT (id) DO NOTHING;
 -- ----------------------------------------------------------------------------
 -- BLOQUE DE MIGRACIÓN RÁPIDA (Ejecutar en SQL Editor de Supabase si ya existe la BD)
 -- ----------------------------------------------------------------------------
+-- 1. Flujo Prepago Obligatorio: permitir 'PENDIENTE_PAGO' en pedidos
+-- ALTER TABLE pedidos DROP CONSTRAINT IF EXISTS pedidos_estado_check;
+-- ALTER TABLE pedidos 
+--   ADD CONSTRAINT pedidos_estado_check 
+--   CHECK (estado IN ('PENDIENTE_PAGO', 'RECIBIDO', 'PENDIENTE', 'EN_PREPARACION', 'LISTO', 'ENTREGADO', 'CANCELADO'));
+-- ALTER TABLE pedidos ALTER COLUMN estado SET DEFAULT 'PENDIENTE_PAGO';
+-- ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS hora_confirmacion TIMESTAMPTZ;
+--
+-- 2. Asegurar que pagos admita 'APROBADO' y columna id_pedido
+-- ALTER TABLE pagos DROP CONSTRAINT IF EXISTS pagos_estado_check;
+-- ALTER TABLE pagos 
+--   ADD CONSTRAINT pagos_estado_check 
+--   CHECK (estado IN ('PENDIENTE', 'APROBADO', 'COMPLETADO', 'FALLIDO', 'REEMBOLSADO'));
+-- ALTER TABLE pagos ADD COLUMN IF NOT EXISTS id_pedido INT REFERENCES pedidos(id_pedido) ON DELETE SET NULL;
+--
+-- 3. Vista KDS de cocina excluyendo pedidos sin pagar
+-- CREATE OR REPLACE VIEW vw_kds_cocina AS
+-- SELECT 
+--     dp.id_detalle,
+--     p.id_pedido,
+--     p.numero_ticket,
+--     m.numero_mesa,
+--     ec.nombre AS estacion,
+--     pl.nombre AS plato,
+--     dp.cantidad,
+--     dp.estado_estacion,
+--     dp.observaciones_item,
+--     COALESCE(STRING_AGG(op.nombre, ', '), 'Estándar') AS personalizaciones,
+--     p.creado_en AS hora_pedido,
+--     EXTRACT(EPOCH FROM (NOW() - p.creado_en))::INT / 60 AS minutos_espera
+-- FROM detalle_pedidos dp
+-- JOIN pedidos p ON dp.id_pedido = p.id_pedido
+-- JOIN sesiones_mesa sm ON p.id_sesion = sm.id_sesion
+-- JOIN mesas m ON sm.id_mesa = m.id_mesa
+-- JOIN platos pl ON dp.id_plato = pl.id_plato
+-- JOIN estaciones_cocina ec ON pl.id_estacion = ec.id_estacion
+-- LEFT JOIN detalle_pedido_opciones dpo ON dp.id_detalle = dpo.id_detalle
+-- LEFT JOIN opciones_personalizacion op ON dpo.id_opcion = op.id_opcion
+-- WHERE dp.estado_estacion IN ('PENDIENTE', 'PREPARANDO', 'LISTO')
+--   AND p.estado NOT IN ('PENDIENTE_PAGO', 'CANCELADO', 'ENTREGADO')
+-- GROUP BY dp.id_detalle, p.id_pedido, p.numero_ticket, m.numero_mesa, 
+--          ec.nombre, pl.nombre, dp.cantidad, dp.estado_estacion, 
+--          dp.observaciones_item, p.creado_en;
+--
+-- 4. Expiración de sesión y Geocerca GPS (si no se ejecutó previamente)
 -- ALTER TABLE sesiones_mesa
 --   ADD COLUMN IF NOT EXISTS expira_en TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '90 minutes');
 --

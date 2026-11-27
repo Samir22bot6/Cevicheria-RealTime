@@ -37,6 +37,7 @@ router.post('/ia/recomendar', IaController.recomendar);
 // Integración Mercado Pago (Orders API + Webhooks)
 router.post('/pagos/crear-orden', PagosController.crearOrden);
 router.post('/pagos/confirmar-retorno', PagosController.confirmarRetorno);
+router.post('/pagos/simular-aprobacion/:id_pedido', PagosController.simularAprobacionPedido);
 router.post('/pagos/webhook', PagosController.webhook);
 
 // ==========================================

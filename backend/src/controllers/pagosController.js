@@ -1,4 +1,5 @@
 import { MercadoPagoService } from '../services/mercadoPagoService.js';
+import { PedidoService } from '../services/pedidoService.js';
 
 export const PagosController = {
   /**
@@ -6,13 +7,14 @@ export const PagosController = {
    */
   async crearOrden(req, res) {
     try {
-      const { id_sesion, qr_token, metodo_preferido, monto, propina } = req.body;
+      const { id_sesion, qr_token, metodo_preferido, monto, propina, id_pedido } = req.body;
       const data = await MercadoPagoService.crearOrden({
         id_sesion,
         qr_token,
         metodo_preferido,
         monto,
-        propina
+        propina,
+        id_pedido
       });
       return res.status(200).json(data);
     } catch (err) {
@@ -33,6 +35,19 @@ export const PagosController = {
         status
       });
       return res.status(200).json(data);
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: err.message });
+    }
+  },
+
+  /**
+   * POST /api/v1/pagos/simular-aprobacion/:id_pedido
+   */
+  async simularAprobacionPedido(req, res) {
+    try {
+      const { id_pedido } = req.params;
+      const data = await PedidoService.activarPedidoPagado(id_pedido, `DEMO-APROBADO-${Date.now()}`);
+      return res.status(200).json({ ok: true, data });
     } catch (err) {
       return res.status(400).json({ ok: false, error: err.message });
     }

@@ -93,6 +93,13 @@ export default function ClienteView() {
   const [ordenCreadaMP, setOrdenCreadaMP] = useState(null);
   const [comprobantePago, setComprobantePago] = useState(null);
 
+  // Prepago de pedidos obligatorio (Flujo Cero Pedidos a Cocina sin Pago)
+  const [pedidoEnPrepago, setPedidoEnPrepago] = useState(null);
+  const [mostrarModalPrepago, setMostrarModalPrepago] = useState(false);
+  const [cargandoPrepago, setCargandoPrepago] = useState(false);
+  const [simulandoPago, setSimulandoPago] = useState(false);
+  const [ticketConfirmadoCocina, setTicketConfirmadoCocina] = useState(null);
+
   // Temporizador de sesión
   const actualizarTiempoRestante = (expira_en) => {
     if (!expira_en) return;
@@ -253,6 +260,22 @@ export default function ClienteView() {
       });
     });
 
+    // Evento activado cuando el pedido en prepago es aprobado y enviado a cocina
+    socket.on('pedido_pagado_confirmado', (data) => {
+      setTicketConfirmadoCocina({
+        numero_ticket: data.numero_ticket,
+        mensaje: '¡Pago recibido! Tu pedido ya entró a cocina'
+      });
+      setMostrarModalPrepago(false);
+      setPedidoEnPrepago(null);
+      setCarrito([]);
+      setPestana('cuenta');
+      showToast('success', '¡Pedido confirmado!', `Ticket ${data.numero_ticket} ya entró a cocina 🐟`);
+      api.obtenerCuenta(sesion.id_sesion).then(r => {
+        if (r.ok) setCuenta(r.data);
+      });
+    });
+
     socket.on('pago_confirmado', (data) => {
       setComprobantePago({
         id_pago: data.id_pago,
@@ -270,6 +293,7 @@ export default function ClienteView() {
       socket.off('estado_plato_actualizado');
       socket.off('carta_actualizada');
       socket.off('pago_procesado');
+      socket.off('pedido_pagado_confirmado');
       socket.off('pago_confirmado');
     };
   }, [sesion?.id_sesion]);
@@ -337,10 +361,11 @@ export default function ClienteView() {
     setPlatoModal(null);
   };
 
-  const confirmarEnvioPedido = async () => {
+  const iniciarPrepagoPedido = async () => {
     if (!sesion || carrito.length === 0) return;
 
     try {
+      setCargandoPrepago(true);
       const itemsPayload = carrito.map(c => ({
         id_plato: c.id_plato,
         cantidad: c.cantidad,
@@ -350,18 +375,54 @@ export default function ClienteView() {
 
       const res = await api.crearPedido({
         id_sesion: sesion.id_sesion,
-        notas_generales: 'Pedido desde Carta QR',
-        items: itemsPayload
+        notas_generales: 'Pedido Prepago desde Carta QR',
+        items: itemsPayload,
+        qr_token: qrToken,
+        metodo_preferido: metodoPago
       });
 
-      if (res.ok) {
-        setCarrito([]);
-        setPestana('cuenta');
-        const cRes = await api.obtenerCuenta(sesion.id_sesion);
-        if (cRes.ok) setCuenta(cRes.data);
+      if (res.ok && res.data) {
+        setPedidoEnPrepago(res.data);
+        setMostrarModalPrepago(true);
+
+        // Si Mercado Pago devolvió URL real (Checkout Pro)
+        if (!res.data.orden_pago?.modo_demo && res.data.orden_pago?.checkout_url) {
+          window.location.href = res.data.orden_pago.checkout_url;
+        }
+      } else {
+        showToast('error', 'Error al generar pedido', res?.error || 'No se pudo crear el pedido');
       }
     } catch (e) {
-      showToast('error', 'Error al pedir', e.message || 'No se pudo enviar el pedido a cocina.');
+      showToast('error', 'Error al pedir', e.message || 'No se pudo generar el pedido.');
+    } finally {
+      setCargandoPrepago(false);
+    }
+  };
+
+  const simularPagoPrepagoExitoso = async () => {
+    if (!pedidoEnPrepago?.id_pedido) return;
+    try {
+      setSimulandoPago(true);
+      const res = await api.simularAprobacionPedido(pedidoEnPrepago.id_pedido);
+      if (res.ok) {
+        setTicketConfirmadoCocina({
+          numero_ticket: pedidoEnPrepago.numero_ticket,
+          mensaje: '¡Pago recibido! Tu pedido ya entró a cocina'
+        });
+        setMostrarModalPrepago(false);
+        setPedidoEnPrepago(null);
+        setCarrito([]);
+        setPestana('cuenta');
+        showToast('success', '¡Pago aprobado!', 'Tu pedido fue enviado a cocina 🐟');
+        const cRes = await api.obtenerCuenta(sesion.id_sesion);
+        if (cRes.ok) setCuenta(cRes.data);
+      } else {
+        showToast('error', 'Error en simulación', res.error || 'No se pudo aprobar el pedido');
+      }
+    } catch (e) {
+      showToast('error', 'Error', e.message || 'Error simulando el pago');
+    } finally {
+      setSimulandoPago(false);
     }
   };
 
@@ -856,6 +917,19 @@ export default function ClienteView() {
         {/* ==================== PESTAÑA 3: CUENTA Y PEDIDOS ==================== */}
         {pestana === 'cuenta' && (
           <div>
+            {/* Banner de Pedido Prepago Confirmado en Cocina */}
+            {ticketConfirmadoCocina && (
+              <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 mb-4 text-emerald-950 animate-in fade-in shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                  <span className="font-extrabold text-sm">{ticketConfirmadoCocina.mensaje}</span>
+                </div>
+                <p className="text-xs text-emerald-700 font-medium">
+                  Ticket <strong>{ticketConfirmadoCocina.numero_ticket}</strong>. Cocina ya tiene tu comanda y puedes seguir el estado de preparación abajo en tiempo real.
+                </p>
+              </div>
+            )}
+
             {/* Comprobante de Pago Confirmado */}
             {comprobantePago && (
               <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-5 text-emerald-900 animate-in fade-in">
@@ -978,10 +1052,12 @@ export default function ClienteView() {
               <p className="font-bold text-sm">S/ {totalCarrito.toFixed(2)}</p>
             </div>
             <button
-              onClick={confirmarEnvioPedido}
-              className="bg-ocean-500 hover:bg-ocean-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-1.5"
+              onClick={iniciarPrepagoPedido}
+              disabled={cargandoPrepago}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-md"
             >
-              Pedir a Cocina <ChefHat className="w-4 h-4" />
+              <CreditCard className="w-4 h-4" />
+              {cargandoPrepago ? 'Generando...' : `Ir a Pagar (S/ ${totalCarrito.toFixed(2)})`}
             </button>
           </div>
         </div>
@@ -1163,6 +1239,72 @@ export default function ClienteView() {
               className="w-full bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
             >
               Agregar a mi Pedido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL DE PREPAGO OBLIGATORIO ================= */}
+      {mostrarModalPrepago && pedidoEnPrepago && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-ocean-100 text-ocean-700 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <CreditCard className="w-8 h-8" />
+            </div>
+
+            <span className="text-[11px] font-bold text-ocean-600 uppercase tracking-wider block mb-1">
+              Ticket: {pedidoEnPrepago.numero_ticket}
+            </span>
+            <h3 className="text-lg font-black text-slate-800 mb-1">
+              Esperando confirmación de pago...
+            </h3>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Tu pedido se enviará inmediatamente a cocina en cuanto se confirme el pago.
+            </p>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4 text-center">
+              <span className="text-xs text-slate-400">Total a pagar</span>
+              <p className="text-2xl font-black text-slate-900">
+                S/ {Number(pedidoEnPrepago.monto_total || 0).toFixed(2)}
+              </p>
+              <div className="flex items-center justify-center gap-1.5 mt-2 text-xs text-slate-600">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                <span className="font-medium">Escuchando confirmación de pasarela...</span>
+              </div>
+            </div>
+
+            {/* Si Mercado Pago retornó enlace directo de Checkout Pro */}
+            {pedidoEnPrepago.orden_pago?.checkout_url && (
+              <a
+                href={pedidoEnPrepago.orden_pago.checkout_url}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full mb-3 bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-3 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md"
+              >
+                Abrir Pasarela de Pago
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+
+            {/* Botón discreto de modo demo para pruebas */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={simularPagoPrepagoExitoso}
+                disabled={simulandoPago}
+                className="w-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                {simulandoPago ? 'Confirmando...' : '⚡ Simular Pago Exitoso (Modo Demo)'}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMostrarModalPrepago(false)}
+              className="mt-3 text-xs text-slate-400 hover:text-slate-600 font-medium"
+            >
+              Cerrar y volver a la carta
             </button>
           </div>
         </div>

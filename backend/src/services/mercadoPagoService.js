@@ -9,7 +9,7 @@ export const MercadoPagoService = {
   /**
    * 1. Crear Orden en Mercado Pago (Orders API) y registrar pago en estado PENDIENTE
    */
-  async crearOrden({ id_sesion, qr_token, metodo_preferido = 'TARJETA_ONLINE', monto, propina = 0 }) {
+  async crearOrden({ id_sesion, qr_token, metodo_preferido = 'TARJETA_ONLINE', monto, propina = 0, id_pedido = null }) {
     if (!id_sesion) throw new Error('id_sesion es requerido');
     if (!monto || Number(monto) <= 0) throw new Error('El monto debe ser mayor a 0');
 
@@ -28,7 +28,8 @@ export const MercadoPagoService = {
             monto: Number(monto),
             propina: Number(propina) || 0.00,
             estado: 'PENDIENTE',
-            referencia_pasarela: null
+            referencia_pasarela: null,
+            ...(id_pedido ? { id_pedido: Number(id_pedido) } : {})
           }
         ]);
       } catch (err) {
@@ -40,6 +41,7 @@ export const MercadoPagoService = {
     mockDb.pagos.push({
       id_pago: idPago,
       id_sesion,
+      id_pedido: id_pedido ? Number(id_pedido) : null,
       id_cajero: null,
       metodo_pago: metodo_preferido,
       monto: Number(monto),
@@ -207,6 +209,40 @@ export const MercadoPagoService = {
     pagoEncontrado.estado = 'COMPLETADO';
     pagoEncontrado.referencia_pasarela = referencia;
     pagoEncontrado.pagado_en = new Date().toISOString();
+
+    // 4.1. Si el pago corresponde a un pedido en prepago, activar y enviar a cocina
+    const idPedidoAsociado = pagoEncontrado.id_pedido;
+    if (idPedidoAsociado) {
+      try {
+        const { PedidoService } = await import('./pedidoService.js');
+        await PedidoService.activarPedidoPagado(idPedidoAsociado, referencia);
+      } catch (errAct) {
+        console.warn('Aviso activando pedido prepagado:', errAct.message);
+      }
+    } else if (id_sesion) {
+      // Activar cualquier pedido en PENDIENTE_PAGO de esta sesión
+      try {
+        const { PedidoService } = await import('./pedidoService.js');
+        if (supabase) {
+          const { data: pends } = await supabase
+            .from('pedidos')
+            .select('id_pedido')
+            .eq('id_sesion', id_sesion)
+            .eq('estado', 'PENDIENTE_PAGO');
+          if (pends && pends.length > 0) {
+            for (const p of pends) {
+              await PedidoService.activarPedidoPagado(p.id_pedido, referencia);
+            }
+          }
+        }
+        const mockPends = mockDb.pedidos.filter(p => p.id_sesion === id_sesion && p.estado === 'PENDIENTE_PAGO');
+        for (const mp of mockPends) {
+          await PedidoService.activarPedidoPagado(mp.id_pedido, referencia);
+        }
+      } catch (errPends) {
+        console.warn('Aviso activando pedidos pendientes de sesión:', errPends.message);
+      }
+    }
 
     // 5. Consultar cuenta y saldo pendiente
     const cuentaActual = await CuentaService.obtenerCuentaSesion(id_sesion);

@@ -119,6 +119,14 @@ export const api = {
     return res.json();
   },
 
+  async simularAprobacionPedido(id_pedido) {
+    const res = await fetch(`${API_BASE_URL}/pagos/simular-aprobacion/${id_pedido}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return res.json();
+  },
+
   async enviarResena(datos) {
     const res = await fetch(`${API_BASE_URL}/resenas`, {
       method: 'POST',

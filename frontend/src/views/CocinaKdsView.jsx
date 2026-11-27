@@ -13,12 +13,39 @@ export default function CocinaKdsView() {
   const navigate = useNavigate();
   const { showToast, toasts, dismissToast } = useToast();
 
+  const reproducirCampanaCocina = () => {
+    try {
+      const audio = new Audio('/sounds/campana.mp3');
+      audio.play().catch(() => {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      });
+    } catch (e) {
+      console.warn('Audio no disponible:', e);
+    }
+  };
+
   const cargarKds = async (est = estacion) => {
     try {
       setCargando(true);
       const res = await api.obtenerKds(est);
       if (res.ok && res.data) {
-        setItems(res.data);
+        // Garantizar que no se muestren pedidos en PENDIENTE_PAGO
+        const itemsValidos = res.data.filter(it => it.estado !== 'PENDIENTE_PAGO');
+        setItems(itemsValidos);
       }
     } catch (e) {
       console.error('Error cargando KDS:', e);
@@ -31,15 +58,20 @@ export default function CocinaKdsView() {
     cargarKds(estacion);
   }, [estacion]);
 
-  // Escuchar eventos en vivo desde WebSockets
+  // Escuchar eventos en vivo desde WebSockets (solo pedidos pagados y aprobados)
   useEffect(() => {
     socket.emit('unirse_cocina', estacion);
 
     socket.on('nuevo_pedido_item', (nuevoItem) => {
+      // Ignorar si viniera en PENDIENTE_PAGO
+      if (nuevoItem.estado === 'PENDIENTE_PAGO') return;
+
       setItems(prev => {
         // Evitar duplicados
         if (prev.some(it => it.id_detalle === nuevoItem.id_detalle)) return prev;
         if (estacion === 'TODAS' || nuevoItem.estacion === estacion) {
+          reproducirCampanaCocina();
+          showToast('info', '🔔 ¡Nueva comanda en cocina!', `${nuevoItem.plato} (Mesa ${nuevoItem.numero_mesa})`);
           return [...prev, nuevoItem];
         }
         return prev;
