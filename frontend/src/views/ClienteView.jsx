@@ -35,6 +35,7 @@ export default function ClienteView() {
 
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [segundosCargando, setSegundosCargando] = useState(0);
   const [errorSesion, setErrorSesion] = useState(null);
   const [errorCodigo, setErrorCodigo] = useState(null); // 'GPS_REQUERIDO' | 'FUERA_DE_RANGO'
   const [pestana, setPestana] = useState('carta');
@@ -119,22 +120,42 @@ export default function ClienteView() {
     return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
   };
 
-  // GPS: obtener posición del cliente
+  // GPS: obtener posición del cliente con timeout rápido para no bloquear
   const obtenerPosicion = () => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
         resolve({ latitud: null, longitud: null });
         return;
       }
+      let terminado = false;
+      const timer = setTimeout(() => {
+        if (!terminado) {
+          terminado = true;
+          resolve({ latitud: null, longitud: null });
+        }
+      }, 3500);
+
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ latitud: pos.coords.latitude, longitud: pos.coords.longitude }),
-        () => resolve({ latitud: null, longitud: null }),
-        { timeout: 8000, maximumAge: 60000 }
+        (pos) => {
+          if (!terminado) {
+            terminado = true;
+            clearTimeout(timer);
+            resolve({ latitud: pos.coords.latitude, longitud: pos.coords.longitude });
+          }
+        },
+        () => {
+          if (!terminado) {
+            terminado = true;
+            clearTimeout(timer);
+            resolve({ latitud: null, longitud: null });
+          }
+        },
+        { timeout: 3500, maximumAge: 60000 }
       );
     });
   };
 
-  // 1. Iniciar sesión con código QR y GPS
+  // 1. Iniciar sesión con código QR y GPS (Carga paralela ultrarrápida)
   const cargarSesionMesa = async () => {
     if (!qrToken) {
       setErrorSesion('No se proporcionó ningún código QR en la URL.');
@@ -148,24 +169,27 @@ export default function ClienteView() {
     setCargando(true);
 
     try {
-      // Pedir ubicación GPS antes de abrir sesión
+      // Iniciar descarga de carta de inmediato en paralelo
+      const promesaCarta = api.obtenerCarta();
+
+      // Pedir ubicación GPS con timeout controlado
       const { latitud, longitud } = await obtenerPosicion();
       const res = await api.abrirSesion(qrToken, 1, latitud, longitud);
+
+      // Esperar carta que ya venía descargándose
+      const resCarta = await promesaCarta;
+      if (resCarta.ok && resCarta.data) {
+        setCarta(resCarta.data);
+        if (resCarta.data.length > 0) setCatSeleccionada(resCarta.data[0].id_categoria);
+      }
+
       if (res && res.ok && res.data) {
         setSesion(res.data);
         if (res.data.expira_en) actualizarTiempoRestante(res.data.expira_en);
         socket.emit('unirse_sesion', res.data.id_sesion);
 
-        // Cargar carta y cuenta inicial
-        const [resCarta, resCuenta] = await Promise.all([
-          api.obtenerCarta(),
-          api.obtenerCuenta(res.data.id_sesion)
-        ]);
-
-        if (resCarta.ok) {
-          setCarta(resCarta.data);
-          if (resCarta.data.length > 0) setCatSeleccionada(resCarta.data[0].id_categoria);
-        }
+        // Cargar cuenta de la mesa
+        const resCuenta = await api.obtenerCuenta(res.data.id_sesion);
         if (resCuenta.ok) {
           setCuenta(resCuenta.data);
         }
@@ -190,7 +214,7 @@ export default function ClienteView() {
       console.error('Error inicializando sesión:', e);
       setErrorSesion(
         e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')
-          ? 'Error de conexión con el servidor. Si el backend está en Render, puede tardar hasta 30-50 segundos en despertar.'
+          ? 'El servidor en la nube está despertando o no responde. Por favor espera unos segundos y pulsa Reintentar.'
           : e.message || 'Error inesperado al conectar con el servidor.'
       );
     } finally {
@@ -203,6 +227,17 @@ export default function ClienteView() {
     // Cleanup timer al desmontar
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [qrToken]);
+
+  // Contador de segundos para la pantalla de carga (útil cuando Render está despertando)
+  useEffect(() => {
+    let interval;
+    if (cargando) {
+      interval = setInterval(() => setSegundosCargando(s => s + 1), 1000);
+    } else {
+      setSegundosCargando(0);
+    }
+    return () => clearInterval(interval);
+  }, [cargando]);
 
   // Función para confirmar retorno de pasarela
   const confirmarRetornoDesdeUrl = async (id_pago, order_id, payment_id, status, idSesionActual) => {
@@ -619,9 +654,22 @@ export default function ClienteView() {
       <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-slate-50">
         <div className="w-14 h-14 border-4 border-ocean-600 border-t-transparent rounded-full animate-spin mb-4 shadow-sm"></div>
         <h2 className="text-base font-bold text-slate-800 mb-1">Conectando con tu mesa...</h2>
-        <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-          Abriendo sesión y cargando carta fresca del día. Si el servidor está iniciando, puede demorar unos segundos.
+        <p className="text-xs text-slate-500 max-w-xs leading-relaxed mb-4">
+          Abriendo sesión y cargando carta fresca del día.
         </p>
+
+        {segundosCargando >= 4 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 max-w-xs text-left animate-in fade-in shadow-sm">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 mb-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+              <span>Despertando servidor en la nube ({segundosCargando}s)</span>
+            </div>
+            <p className="text-[11px] text-amber-700 leading-relaxed">
+              En el plan gratuito de Render, el servidor se apaga tras 15 minutos sin uso.
+              El primer encendido toma entre <strong>40 a 60 segundos</strong>. Luego de eso, la carta cargará de inmediato.
+            </p>
+          </div>
+        )}
       </div>
     );
   }
