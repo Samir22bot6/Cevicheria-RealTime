@@ -24,6 +24,7 @@ router.post('/auth/login', AuthController.login);
 // 2. RUTAS PÚBLICAS / CLIENTES QR
 // ==========================================
 router.post('/sesiones/abrir', SesionController.abrir);
+router.get('/sesiones/config-publica', SesionController.obtenerConfigPublica);
 router.post('/sesiones/:id_sesion/llamar-mozo', SesionController.llamarMozo);
 router.get('/sesiones/mesas', SesionController.listarMesas);
 router.get('/sesiones/:id_sesion/cuenta', CuentaController.obtener);
@@ -34,9 +35,10 @@ router.post('/pagos', CuentaController.pagar);
 router.post('/resenas', ResenaController.registrar);
 router.post('/ia/recomendar', IaController.recomendar);
 
-// Integración Mercado Pago (Orders API + Webhooks)
+// Integración Mercado Pago (Orders API + Webhooks) y Modo Demo
 router.post('/pagos/crear-orden', PagosController.crearOrden);
 router.post('/pagos/confirmar-retorno', PagosController.confirmarRetorno);
+router.post('/pagos/demo-checkout', PagosController.demoCheckout);
 router.post('/pagos/simular-aprobacion/:id_pedido', PagosController.simularAprobacionPedido);
 router.post('/pagos/webhook', PagosController.webhook);
 

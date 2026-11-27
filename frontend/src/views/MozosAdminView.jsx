@@ -32,7 +32,8 @@ import {
   Volume2,
   VolumeX,
   MapPin,
-  Navigation
+  Navigation,
+  CreditCard
 } from 'lucide-react';
 
 export default function MozosAdminView() {
@@ -46,13 +47,14 @@ export default function MozosAdminView() {
   // Sonido y Alertas
   const [sonidoActivo, setSonidoActivo] = useState(true);
 
-  // Configuración GPS / Geocerca
+  // Configuración GPS / Geocerca y Pagos
   const [configuracionGPS, setConfiguracionGPS] = useState({
     nombre_local: 'SIN ESPINAS',
     latitud: -16.4090474,
     longitud: -71.5374510,
     radio_permitido_metros: 80,
-    validar_gps: false
+    validar_gps: false,
+    modo_demo_pagos: true
   });
   const [guardandoConfig, setGuardandoConfig] = useState(false);
   const [obteniendoUbicacion, setObteniendoUbicacion] = useState(false);
@@ -1319,30 +1321,63 @@ export default function MozosAdminView() {
                   </div>
                 </div>
 
-                {/* 3. CONTROL DE UBICACIÓN (GEOCERCA GPS) */}
+                {/* 3. CONTROL DE UBICACIÓN (GEOCERCA GPS) Y MODO DEMO DE PAGOS */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-4">
                     <div>
                       <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                         <MapPin className="w-5 h-5 text-ocean-600" />
-                        Control de Ubicación (Geocerca del Restaurante)
+                        Control de Ubicación (Geocerca) y Modo Demo de Pagos
                       </h3>
                       <p className="text-xs text-slate-500">
-                        Valida que los comensales estén físicamente en el local para ordenar por QR.
+                        Gestiona la geocerca de seguridad y el comportamiento de la pasarela de pagos para presentaciones.
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                        configuracionGPS.modo_demo_pagos
+                          ? 'bg-limefish-50 text-limefish-700 border-limefish-300'
+                          : 'bg-ocean-50 text-ocean-700 border-ocean-300'
+                      }`}>
+                        {configuracionGPS.modo_demo_pagos ? '⚡ Modo Demo Pagos: ACTIVO' : '💳 Mercado Pago: ACTIVO'}
+                      </span>
                       <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
                         configuracionGPS.validar_gps
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                           : 'bg-slate-100 text-slate-500 border-slate-200'
                       }`}>
-                        {configuracionGPS.validar_gps ? '🛡️ Geocerca ACTIVA' : '⚪ Geocerca INACTIVA (Modo Demo)'}
+                        {configuracionGPS.validar_gps ? '🛡️ Geocerca ACTIVA' : '⚪ Geocerca INACTIVA'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+                    {/* Switch Modo Demo Pagos */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <CreditCard className="w-4 h-4 text-ocean-600" />
+                          <span className="text-xs font-bold text-slate-800">Modo Demo Pagos</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          {configuracionGPS.modo_demo_pagos
+                            ? 'Aprobación en 1 clic sin login de Mercado Pago (Ideal para presentaciones).'
+                            : 'Requiere pasar por la pasarela oficial de Mercado Pago (Yape / Tarjetas reales).'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setConfiguracionGPS(prev => ({ ...prev, modo_demo_pagos: !prev.modo_demo_pagos }))}
+                        className={`mt-4 w-full py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                          configuracionGPS.modo_demo_pagos
+                            ? 'bg-limefish-600 hover:bg-limefish-700 text-slate-950 font-extrabold shadow-sm'
+                            : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                        }`}
+                      >
+                        {configuracionGPS.modo_demo_pagos ? 'Desactivar Modo Demo' : 'Activar Modo Demo de Pagos'}
+                      </button>
+                    </div>
+
                     {/* Switch Validar GPS */}
                     <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col justify-between">
                       <div>
@@ -1421,7 +1456,7 @@ export default function MozosAdminView() {
                       className="bg-ocean-600 hover:bg-ocean-700 disabled:opacity-50 text-white font-bold text-xs py-2.5 px-5 rounded-xl shadow-md transition flex items-center gap-2"
                     >
                       <Check className="w-4 h-4" />
-                      {guardandoConfig ? 'Guardando ajustes...' : 'Guardar Configuración de Geocerca'}
+                      {guardandoConfig ? 'Guardando ajustes...' : 'Guardar Configuración General'}
                     </button>
                   </div>
                 </div>

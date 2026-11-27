@@ -23,7 +23,8 @@ import {
   MapPin,
   Timer,
   Users,
-  ShoppingCart
+  ShoppingCart,
+  Zap
 } from 'lucide-react';
 
 export default function ClienteView() {
@@ -100,6 +101,11 @@ export default function ClienteView() {
   const [cargandoPrepago, setCargandoPrepago] = useState(false);
   const [simulandoPago, setSimulandoPago] = useState(false);
   const [ticketConfirmadoCocina, setTicketConfirmadoCocina] = useState(null);
+
+  // Modo Demo de Pagos (Checkout instantáneo sin Mercado Pago)
+  const [mostrarModalDemoCheckout, setMostrarModalDemoCheckout] = useState(false);
+  const [metodoPagoDemo, setMetodoPagoDemo] = useState('YAPE_DEMO');
+  const [procesandoDemoCheckout, setProcesandoDemoCheckout] = useState(false);
 
   // Temporizador de sesión
   const actualizarTiempoRestante = (expira_en) => {
@@ -399,6 +405,13 @@ export default function ClienteView() {
   const iniciarPrepagoPedido = async () => {
     if (!sesion || carrito.length === 0) return;
 
+    // Si Modo Demo de Pagos está activo, mostrar selector de pago simulado en 1 clic
+    if (sesion?.modo_demo_pagos) {
+      setMostrarModalDemoCheckout(true);
+      return;
+    }
+
+    // Flujo normal con pasarela Mercado Pago
     try {
       setCargandoPrepago(true);
       const itemsPayload = carrito.map(c => ({
@@ -431,6 +444,57 @@ export default function ClienteView() {
       showToast('error', 'Error al pedir', e.message || 'No se pudo generar el pedido.');
     } finally {
       setCargandoPrepago(false);
+    }
+  };
+
+  const confirmarDemoCheckout = async () => {
+    if (!sesion || carrito.length === 0) return;
+
+    try {
+      setProcesandoDemoCheckout(true);
+      const itemsPayload = carrito.map(c => ({
+        id_plato: c.id_plato,
+        cantidad: c.cantidad,
+        observaciones_item: c.observaciones_item,
+        opciones_ids: c.opciones_ids
+      }));
+
+      const resPedido = await api.crearPedido({
+        id_sesion: sesion.id_sesion,
+        notas_generales: `Pedido Prepago Demo (${metodoPagoDemo})`,
+        items: itemsPayload,
+        qr_token: qrToken,
+        metodo_preferido: metodoPagoDemo
+      });
+
+      if (!resPedido.ok || !resPedido.data?.id_pedido) {
+        showToast('error', 'Error al crear pedido', resPedido?.error || 'No se pudo crear el pedido');
+        return;
+      }
+
+      const resDemo = await api.demoCheckout({
+        id_pedido: resPedido.data.id_pedido,
+        metodo_pago: metodoPagoDemo
+      });
+
+      if (resDemo.ok) {
+        setMostrarModalDemoCheckout(false);
+        setCarrito([]);
+        setPestana('cuenta');
+        setTicketConfirmadoCocina({
+          numero_ticket: resPedido.data.numero_ticket,
+          mensaje: '¡Pago recibido! Tu pedido ya entró a cocina'
+        });
+        showToast('success', '¡Pago aprobado en Modo Demo!', `Ticket ${resPedido.data.numero_ticket} enviado a cocina 🐟`);
+        const cRes = await api.obtenerCuenta(sesion.id_sesion);
+        if (cRes.ok) setCuenta(cRes.data);
+      } else {
+        showToast('error', 'Error en simulación', resDemo.error || 'No se pudo aprobar el pedido en modo demo');
+      }
+    } catch (e) {
+      showToast('error', 'Error', e.message || 'Error en el checkout de demo');
+    } finally {
+      setProcesandoDemoCheckout(false);
     }
   };
 
@@ -1287,6 +1351,76 @@ export default function ClienteView() {
               className="w-full bg-ocean-600 hover:bg-ocean-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
             >
               Agregar a mi Pedido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL MODO DEMO CHECKOUT RÁPIDO ================= */}
+      {mostrarModalDemoCheckout && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-100">
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 bg-lime-100 border border-lime-300 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Zap className="w-7 h-7 text-lime-700" />
+              </div>
+              <span className="text-[11px] font-black text-lime-700 uppercase tracking-widest block mb-1">
+                ⚡ MODO DEMO DE PAGOS ACTIVO
+              </span>
+              <h3 className="text-lg font-black text-slate-900">
+                Selecciona método de pago
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Aprobación instantánea en 1 clic — ideal para presentaciones
+              </p>
+            </div>
+
+            <div className="space-y-2 mb-4">
+              {[
+                { id: 'YAPE_DEMO', label: '📱 Yape (Simulación)' },
+                { id: 'PLIN_DEMO', label: '📱 Plin (Simulación)' },
+                { id: 'TARJETA_DEMO', label: '💳 Tarjeta Débito/Crédito (Simulación)' }
+              ].map(m => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setMetodoPagoDemo(m.id)}
+                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition border flex items-center justify-between cursor-pointer ${
+                    metodoPagoDemo === m.id
+                      ? 'bg-lime-50 text-lime-900 border-lime-500 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-lime-300'
+                  }`}
+                >
+                  <span>{m.label}</span>
+                  {metodoPagoDemo === m.id && <Check className="w-4 h-4 text-lime-600" />}
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 mb-5 text-center">
+              <span className="text-xs text-slate-500 font-medium">Total a pagar</span>
+              <p className="text-2xl font-black text-slate-900">
+                S/ {totalCarrito.toFixed(2)}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={confirmarDemoCheckout}
+              disabled={procesandoDemoCheckout}
+              className="w-full bg-lime-400 hover:bg-lime-500 disabled:opacity-50 text-slate-950 font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm transition shadow-lg shadow-lime-200 flex items-center justify-center gap-2 mb-3 cursor-pointer"
+            >
+              <Zap className="w-4 h-4 fill-current" />
+              {procesandoDemoCheckout ? 'Confirmando y enviando...' : 'Confirmar Pago y Enviar a Cocina (Modo Demo)'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMostrarModalDemoCheckout(false)}
+              disabled={procesandoDemoCheckout}
+              className="w-full text-xs text-slate-400 hover:text-slate-600 font-semibold py-1 cursor-pointer"
+            >
+              Cancelar y volver a la carta
             </button>
           </div>
         </div>

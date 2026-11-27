@@ -391,3 +391,7 @@ ON CONFLICT (id) DO NOTHING;
 -- INSERT INTO configuracion_local (id, nombre_local, latitud, longitud, radio_permitido_metros, validar_gps)
 -- VALUES (1, 'SIN ESPINAS', -16.4090474, -71.5374510, 80, FALSE)
 -- ON CONFLICT (id) DO NOTHING;
+--
+-- 5. Modo Demo de Pagos (aprobación en 1 clic para presentaciones)
+-- ALTER TABLE configuracion_local
+--   ADD COLUMN IF NOT EXISTS modo_demo_pagos BOOLEAN NOT NULL DEFAULT TRUE;

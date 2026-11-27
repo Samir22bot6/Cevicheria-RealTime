@@ -41,6 +41,22 @@ export const SesionController = {
     }
   },
 
+  async obtenerConfigPublica(req, res) {
+    try {
+      const cfg = await SesionService.obtenerConfiguracionLocal();
+      return res.status(200).json({
+        ok: true,
+        data: {
+          nombre_local: cfg.nombre_local,
+          validar_gps: Boolean(cfg.validar_gps),
+          modo_demo_pagos: cfg.modo_demo_pagos !== undefined ? Boolean(cfg.modo_demo_pagos) : true
+        }
+      });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  },
+
   async listarMesas(req, res) {
     try {
       const mesas = await SesionService.listarMesas();

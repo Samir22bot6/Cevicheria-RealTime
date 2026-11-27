@@ -136,7 +136,8 @@ export const mockDb = {
     latitud: -16.4090474,
     longitud: -71.5374510,
     radio_permitido_metros: 80,
-    validar_gps: false
+    validar_gps: false,
+    modo_demo_pagos: true
   }
 };
 

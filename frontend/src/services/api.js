@@ -42,6 +42,11 @@ export const api = {
   },
 
   // --- CLIENTE / QR ---
+  async obtenerConfigPublica() {
+    const res = await fetch(`${API_BASE_URL}/sesiones/config-publica`);
+    return res.json();
+  },
+
   async abrirSesion(codigo_qr_token, cantidad_comensales = 1, latitud = null, longitud = null) {
     const body = { codigo_qr_token, cantidad_comensales };
     if (latitud !== null && longitud !== null) {
@@ -115,6 +120,15 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
+    });
+    return res.json();
+  },
+
+  async demoCheckout({ id_pedido, metodo_pago }) {
+    const res = await fetch(`${API_BASE_URL}/pagos/demo-checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_pedido, metodo_pago })
     });
     return res.json();
   },

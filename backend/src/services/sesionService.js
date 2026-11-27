@@ -37,7 +37,8 @@ export const SesionService = {
             latitud: Number(data.latitud),
             longitud: Number(data.longitud),
             radio_permitido_metros: Number(data.radio_permitido_metros),
-            validar_gps: Boolean(data.validar_gps)
+            validar_gps: Boolean(data.validar_gps),
+            modo_demo_pagos: data.modo_demo_pagos !== undefined ? Boolean(data.modo_demo_pagos) : true
           };
         }
       } catch (e) {
@@ -48,7 +49,7 @@ export const SesionService = {
     return { ...mockDb.configuracion_local };
   },
 
-  async actualizarConfiguracionLocal({ nombre_local, latitud, longitud, radio_permitido_metros, validar_gps }) {
+  async actualizarConfiguracionLocal({ nombre_local, latitud, longitud, radio_permitido_metros, validar_gps, modo_demo_pagos }) {
     const payload = {
       id: 1,
       actualizado_en: new Date().toISOString()
@@ -58,6 +59,7 @@ export const SesionService = {
     if (longitud !== undefined) payload.longitud = Number(longitud);
     if (radio_permitido_metros !== undefined) payload.radio_permitido_metros = Math.max(10, Number(radio_permitido_metros) || 80);
     if (validar_gps !== undefined) payload.validar_gps = Boolean(validar_gps);
+    if (modo_demo_pagos !== undefined) payload.modo_demo_pagos = Boolean(modo_demo_pagos);
 
     if (supabase) {
       try {
@@ -74,7 +76,8 @@ export const SesionService = {
             latitud: Number(data.latitud),
             longitud: Number(data.longitud),
             radio_permitido_metros: Number(data.radio_permitido_metros),
-            validar_gps: Boolean(data.validar_gps)
+            validar_gps: Boolean(data.validar_gps),
+            modo_demo_pagos: data.modo_demo_pagos !== undefined ? Boolean(data.modo_demo_pagos) : true
           };
           return mockDb.configuracion_local;
         }
@@ -126,6 +129,7 @@ export const SesionService = {
   async abrirSesion(codigo_qr_token, cantidad_comensales = 1, latitud = null, longitud = null) {
     // Validar geocerca GPS si está activa
     await this.validarGeocerca(latitud, longitud);
+    const cfg = await this.obtenerConfiguracionLocal();
 
     const ahora = new Date();
     const expiraEnDefault = new Date(ahora.getTime() + SESION_DURACION_MS).toISOString();
@@ -163,7 +167,8 @@ export const SesionService = {
               id_mesa: mesa.id_mesa,
               estado_mesa: 'OCUPADA',
               estado: 'ABIERTA',
-              expira_en: sesionExistente.expira_en || expiraEnDefault
+              expira_en: sesionExistente.expira_en || expiraEnDefault,
+              modo_demo_pagos: cfg.modo_demo_pagos !== undefined ? Boolean(cfg.modo_demo_pagos) : true
             };
           }
 
@@ -214,7 +219,8 @@ export const SesionService = {
           id_mesa: mesa.id_mesa,
           estado_mesa: 'OCUPADA',
           estado: 'ABIERTA',
-          expira_en: nuevaSesion.expira_en || expiraEnDefault
+          expira_en: nuevaSesion.expira_en || expiraEnDefault,
+          modo_demo_pagos: cfg.modo_demo_pagos !== undefined ? Boolean(cfg.modo_demo_pagos) : true
         };
       } catch (err) {
         if (err.statusCode === 403) throw err;
@@ -268,7 +274,8 @@ export const SesionService = {
       id_mesa: mesa.id_mesa,
       estado_mesa: mesa.estado,
       estado: sesion.estado,
-      expira_en: sesion.expira_en || expiraEnDefault
+      expira_en: sesion.expira_en || expiraEnDefault,
+      modo_demo_pagos: cfg.modo_demo_pagos !== undefined ? Boolean(cfg.modo_demo_pagos) : true
     };
   },
 
