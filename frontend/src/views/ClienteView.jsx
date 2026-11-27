@@ -494,6 +494,10 @@ export default function ClienteView() {
           showToast('success', '¡Pago Aprobado!', `Ticket ${numTicket} enviado a cocina`);
           const cRes = await api.obtenerCuenta(sesion.id_sesion);
           if (cRes.ok) setCuenta(cRes.data);
+          setTimeout(async () => {
+            const cRes2 = await api.obtenerCuenta(sesion.id_sesion);
+            if (cRes2.ok) setCuenta(cRes2.data);
+          }, 400);
         } else {
           showToast('error', 'Error en simulación', resDemo.error || 'No se pudo aprobar el pago');
         }
@@ -504,7 +508,7 @@ export default function ClienteView() {
           metodo_pago: metodoPagoDigital,
           monto: cuenta.saldo_pendiente,
           propina: 0,
-          referencia: `DIGITAL_SIMULADO_${Date.now()}`
+          referencia_pasarela: `DIGITAL_SIMULADO_${Date.now()}`
         });
         if (resPago.ok) {
           setMostrarModalCheckoutSimulado(false);
@@ -512,6 +516,12 @@ export default function ClienteView() {
           showToast('success', '¡Cuenta Pagada!', 'Pago confirmado');
           const cRes = await api.obtenerCuenta(sesion.id_sesion);
           if (cRes.ok) setCuenta(cRes.data);
+          setTimeout(async () => {
+            const cRes2 = await api.obtenerCuenta(sesion.id_sesion);
+            if (cRes2.ok) setCuenta(cRes2.data);
+          }, 400);
+        } else {
+          showToast('error', 'Error al procesar pago', resPago.error || 'No se pudo registrar el pago');
         }
       } else {
         showToast('info', 'Nada pendiente', 'No hay platos en el carrito ni saldo pendiente.');
@@ -1129,7 +1139,7 @@ export default function ClienteView() {
 
         {/* ==================== PESTAÑA 3: CUENTA Y PEDIDOS ==================== */}
         {pestana === 'cuenta' && (
-          <div>
+          <div className="pb-28">
             {/* Banner de Pedido Prepago Confirmado en Cocina */}
             {ticketConfirmadoCocina && (
               <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 mb-4 text-emerald-950 animate-in fade-in shadow-sm">

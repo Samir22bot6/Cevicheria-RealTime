@@ -17,6 +17,15 @@ export const MercadoPagoService = {
     const idPago = uuidv4();
     const tokenFrontend = qr_token || '77777777-7777-4777-8777-877777777777';
 
+    // Normalizar método de pago para cumplir con CHECK constraint de PostgreSQL
+    let metodoNormalizado = String(metodo_preferido || 'TARJETA_ONLINE').toUpperCase();
+    if (metodoNormalizado.includes('PLIN')) metodoNormalizado = 'PLIN';
+    else if (metodoNormalizado.includes('YAPE')) metodoNormalizado = 'YAPE';
+    else if (metodoNormalizado.includes('TARJETA') || metodoNormalizado.includes('ONLINE')) metodoNormalizado = 'TARJETA_ONLINE';
+    else if (metodoNormalizado.includes('POS')) metodoNormalizado = 'POS_FISICO';
+    else if (metodoNormalizado.includes('EFECTIVO')) metodoNormalizado = 'EFECTIVO';
+    else metodoNormalizado = 'TARJETA_ONLINE';
+
     // Guardar pago en base de datos con estado PENDIENTE
     if (supabase) {
       try {
@@ -24,12 +33,11 @@ export const MercadoPagoService = {
           {
             id_pago: idPago,
             id_sesion,
-            metodo_pago: metodo_preferido,
+            metodo_pago: metodoNormalizado,
             monto: Number(monto),
             propina: Number(propina) || 0.00,
             estado: 'PENDIENTE',
-            referencia_pasarela: null,
-            ...(id_pedido ? { id_pedido: Number(id_pedido) } : {})
+            referencia_pasarela: null
           }
         ]);
       } catch (err) {
@@ -43,7 +51,7 @@ export const MercadoPagoService = {
       id_sesion,
       id_pedido: id_pedido ? Number(id_pedido) : null,
       id_cajero: null,
-      metodo_pago: metodo_preferido,
+      metodo_pago: metodoNormalizado,
       monto: Number(monto),
       propina: Number(propina) || 0.00,
       estado: 'PENDIENTE',

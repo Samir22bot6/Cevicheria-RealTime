@@ -105,6 +105,10 @@ export const api = {
     return res.json();
   },
 
+  async pagarCuenta(datos) {
+    return this.pagar(datos);
+  },
+
   // --- MERCADO PAGO PERÚ (ORDERS API) ---
   async crearOrdenMercadoPago(datos) {
     const res = await fetch(`${API_BASE_URL}/pagos/crear-orden`, {

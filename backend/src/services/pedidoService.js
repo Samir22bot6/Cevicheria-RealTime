@@ -249,48 +249,116 @@ export const PedidoService = {
     let numeroMesa = 'M-??';
     const horaConfirmacion = new Date().toISOString();
 
+    // Normalizar método de pago
+    let metodoPagoNorm = 'YAPE';
+    const refUpper = String(referencia || '').toUpperCase();
+    if (refUpper.includes('PLIN')) metodoPagoNorm = 'PLIN';
+    else if (refUpper.includes('TARJETA') || refUpper.includes('ONLINE')) metodoPagoNorm = 'TARJETA_ONLINE';
+    else if (refUpper.includes('POS')) metodoPagoNorm = 'POS_FISICO';
+    else if (refUpper.includes('EFECTIVO')) metodoPagoNorm = 'EFECTIVO';
+    else if (refUpper.includes('YAPE')) metodoPagoNorm = 'YAPE';
+
     if (supabase) {
       try {
         // 1. Actualizar estado del pedido a PENDIENTE
-        const { data: pedActualizado } = await supabase
+        const { data: pedActualizado, error: pedErr } = await supabase
           .from('pedidos')
           .update({
             estado: 'PENDIENTE',
             hora_confirmacion: horaConfirmacion
           })
           .eq('id_pedido', idPedidoNum)
-          .select('*, sesiones_mesa(id_sesion, mesas(numero_mesa))')
+          .select('*')
           .single();
+
+        if (pedErr) throw pedErr;
 
         if (pedActualizado) {
           numeroTicket = pedActualizado.numero_ticket;
           idSesion = pedActualizado.id_sesion;
-          numeroMesa = pedActualizado.sesiones_mesa?.mesas?.numero_mesa || 'M-??';
 
-          // 2. Si hay pago asociado PENDIENTE, pasarlo a COMPLETADO
-          await supabase
-            .from('pagos')
-            .update({
-              estado: 'COMPLETADO',
-              referencia_pasarela: referencia || `PREPAGO-${Date.now()}`,
-              pagado_en: horaConfirmacion
-            })
-            .eq('id_pedido', idPedidoNum);
+          // Obtener mesa asociada
+          try {
+            const { data: sesionData } = await supabase
+              .from('sesiones_mesa')
+              .select('id_mesa, mesas(numero_mesa)')
+              .eq('id_sesion', idSesion)
+              .single();
+            if (sesionData?.mesas?.numero_mesa) {
+              numeroMesa = sesionData.mesas.numero_mesa;
+            }
+          } catch (mErr) {
+            console.warn('No se pudo obtener mesa en activarPedidoPagado:', mErr.message);
+          }
 
-          // 3. Consultar detalles para la cocina
+          // Consultar detalles para la cocina y calcular monto exacto
           const { data: detalles } = await supabase
             .from('detalle_pedidos')
             .select(`
               id_detalle,
               cantidad,
+              precio_unitario_historico,
+              subtotal_base,
               estado_estacion,
               observaciones_item,
-              platos (nombre, id_estacion, estaciones_cocina(nombre)),
-              detalle_pedido_opciones (opciones_personalizacion(nombre))
+              platos (precio_base, nombre, id_estacion, estaciones_cocina(nombre)),
+              detalle_pedido_opciones (precio_adicional_historico, opciones_personalizacion(nombre))
             `)
             .eq('id_pedido', idPedidoNum);
 
+          let montoPedido = 0;
           if (detalles && detalles.length > 0) {
+            detalles.forEach(d => {
+              const sub = Number(d.subtotal_base) || (Number(d.cantidad) * Number(d.precio_unitario_historico || d.platos?.precio_base || 0));
+              let extras = 0;
+              (d.detalle_pedido_opciones || []).forEach(o => {
+                extras += Number(o.precio_adicional_historico || 0) * Number(d.cantidad || 1);
+              });
+              montoPedido += (sub + extras);
+            });
+            montoPedido = Math.max(0.01, Number(montoPedido.toFixed(2)));
+
+            // Registrar pago COMPLETADO en la tabla pagos para actualizar vw_cuenta_sesion
+            try {
+              const { data: pagoPendiente } = await supabase
+                .from('pagos')
+                .select('id_pago')
+                .eq('id_sesion', idSesion)
+                .eq('estado', 'PENDIENTE')
+                .order('pagado_en', { ascending: false })
+                .limit(1)
+                .single();
+
+              if (pagoPendiente) {
+                await supabase
+                  .from('pagos')
+                  .update({
+                    estado: 'COMPLETADO',
+                    metodo_pago: metodoPagoNorm,
+                    monto: montoPedido,
+                    referencia_pasarela: referencia || `PREPAGO-${Date.now()}`,
+                    pagado_en: horaConfirmacion
+                  })
+                  .eq('id_pago', pagoPendiente.id_pago);
+              } else {
+                await supabase
+                  .from('pagos')
+                  .insert([
+                    {
+                      id_sesion: idSesion,
+                      metodo_pago: metodoPagoNorm,
+                      monto: montoPedido,
+                      propina: 0.00,
+                      estado: 'COMPLETADO',
+                      referencia_pasarela: referencia || `PREPAGO-${Date.now()}`,
+                      pagado_en: horaConfirmacion
+                    }
+                  ]);
+              }
+            } catch (pErr) {
+              console.warn('Error al registrar pago en Supabase:', pErr.message);
+            }
+
             itemsParaCocina = detalles.map(d => {
               const opts = (d.detalle_pedido_opciones || [])
                 .map(o => o.opciones_personalizacion?.nombre)
@@ -330,16 +398,42 @@ export const PedidoService = {
         const mesa = sesion ? mockDb.mesas.find(m => m.id_mesa === sesion.id_mesa) : null;
         numeroMesa = mesa ? mesa.numero_mesa : 'M-07';
 
-        // Actualizar o crear pago en mock
-        const pagoMock = mockDb.pagos.find(p => p.id_pedido === idPedidoNum || (p.id_sesion === idSesion && p.estado === 'PENDIENTE'));
-        if (pagoMock) {
-          pagoMock.estado = 'COMPLETADO';
-          pagoMock.referencia_pasarela = referencia || `PREPAGO-${Date.now()}`;
-          pagoMock.pagado_en = horaConfirmacion;
+        let montoPedidoMock = 0;
+        const detallesMock = mockDb.detalle_pedidos.filter(d => d.id_pedido === idPedidoNum);
+        detallesMock.forEach(d => {
+          const plato = mockDb.platos.find(p => p.id_plato === d.id_plato);
+          const subBase = Number(d.cantidad) * Number(d.precio_unitario_historico || plato?.precio_base || 0);
+          const ops = mockDb.detalle_pedido_opciones.filter(dpo => dpo.id_detalle === d.id_detalle);
+          let extras = 0;
+          ops.forEach(o => {
+            extras += Number(o.precio_adicional_historico || 0) * Number(d.cantidad || 1);
+          });
+          montoPedidoMock += (subBase + extras);
+        });
+        montoPedidoMock = Math.max(0.01, Number(montoPedidoMock.toFixed(2)));
+
+        const pagoMockPend = mockDb.pagos.find(p => p.id_sesion === idSesion && p.estado === 'PENDIENTE');
+        if (pagoMockPend) {
+          pagoMockPend.estado = 'COMPLETADO';
+          pagoMockPend.metodo_pago = metodoPagoNorm;
+          pagoMockPend.monto = montoPedidoMock;
+          pagoMockPend.referencia_pasarela = referencia || `PREPAGO-${Date.now()}`;
+          pagoMockPend.pagado_en = horaConfirmacion;
+        } else {
+          mockDb.pagos.push({
+            id_pago: `pago-${Date.now()}`,
+            id_sesion: idSesion,
+            id_pedido: idPedidoNum,
+            metodo_pago: metodoPagoNorm,
+            monto: montoPedidoMock,
+            propina: 0,
+            estado: 'COMPLETADO',
+            referencia_pasarela: referencia || `PREPAGO-${Date.now()}`,
+            pagado_en: horaConfirmacion
+          });
         }
 
-        const detalles = mockDb.detalle_pedidos.filter(d => d.id_pedido === idPedidoNum);
-        detalles.forEach(d => {
+        detallesMock.forEach(d => {
           const plato = mockDb.platos.find(p => p.id_plato === d.id_plato);
           const estacion = plato ? mockDb.estaciones_cocina.find(e => e.id_estacion === plato.id_estacion) : null;
           const estacionNombre = estacion ? estacion.nombre : 'BARRA_FRIA';
@@ -367,17 +461,20 @@ export const PedidoService = {
     }
 
     // 4. Emitir Socket.io hacia cocina, mozos y mesa del cliente
-    if (io && itemsParaCocina.length > 0) {
-      itemsParaCocina.forEach(item => {
-        io.to(`cocina_${item.estacion}`).emit('nuevo_pedido_item', item);
-      });
-      io.to('cocina_TODAS').emit('nuevo_pedido_lote', itemsParaCocina);
-      io.to('mozos').emit('nuevo_pedido_mozos', {
-        id_pedido: idPedidoNum,
-        numero_ticket: numeroTicket,
-        id_sesion: idSesion,
-        items: itemsParaCocina
-      });
+    if (io) {
+      if (itemsParaCocina.length > 0) {
+        itemsParaCocina.forEach(item => {
+          io.to(`cocina_${item.estacion}`).emit('nuevo_pedido_item', item);
+        });
+        io.to('cocina_TODAS').emit('nuevo_pedido_lote', itemsParaCocina);
+        io.to('mozos').emit('nuevo_pedido_mozos', {
+          id_pedido: idPedidoNum,
+          numero_ticket: numeroTicket,
+          id_sesion: idSesion,
+          items: itemsParaCocina
+        });
+      }
+
       if (idSesion) {
         io.to(`mesa_${idSesion}`).emit('pedido_pagado_confirmado', {
           id_pedido: idPedidoNum,
@@ -388,6 +485,10 @@ export const PedidoService = {
         io.to(`mesa_${idSesion}`).emit('pago_confirmado', {
           id_pedido: idPedidoNum,
           referencia_pasarela: referencia || `PREPAGO-${Date.now()}`
+        });
+        io.to(`mesa_${idSesion}`).emit('pago_procesado', {
+          id_pedido: idPedidoNum,
+          id_sesion: idSesion
         });
       }
     }

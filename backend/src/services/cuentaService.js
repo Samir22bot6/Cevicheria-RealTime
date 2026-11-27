@@ -116,11 +116,15 @@ export const CuentaService = {
     };
   },
 
-  async registrarPago({ id_sesion, metodo_pago, monto, propina = 0, referencia_pasarela = null, id_cajero = null }) {
-    const metodosValidos = ['TARJETA_ONLINE', 'YAPE', 'PLIN', 'POS_FISICO', 'EFECTIVO'];
-    if (!metodosValidos.includes(metodo_pago)) {
-      throw new Error(`Método de pago no válido: ${metodo_pago}`);
-    }
+  async registrarPago({ id_sesion, metodo_pago, monto, propina = 0, referencia_pasarela = null, id_cajero = null, cerrar_sesion = false }) {
+    // Normalizar método de pago para cumplir con CHECK constraint de la base de datos
+    let metodoNormalizado = String(metodo_pago || '').toUpperCase();
+    if (metodoNormalizado.includes('PLIN')) metodoNormalizado = 'PLIN';
+    else if (metodoNormalizado.includes('YAPE')) metodoNormalizado = 'YAPE';
+    else if (metodoNormalizado.includes('TARJETA') || metodoNormalizado.includes('ONLINE')) metodoNormalizado = 'TARJETA_ONLINE';
+    else if (metodoNormalizado.includes('POS')) metodoNormalizado = 'POS_FISICO';
+    else if (metodoNormalizado.includes('EFECTIVO')) metodoNormalizado = 'EFECTIVO';
+    else metodoNormalizado = 'YAPE';
 
     const io = getIO();
 
@@ -133,7 +137,7 @@ export const CuentaService = {
             {
               id_sesion,
               id_cajero: id_cajero ? Number(id_cajero) : null,
-              metodo_pago,
+              metodo_pago: metodoNormalizado,
               monto: Number(monto),
               propina: Number(propina) || 0.00,
               estado: 'COMPLETADO',
@@ -155,14 +159,13 @@ export const CuentaService = {
         let sesionCerrada = false;
         let mesaLiberada = null;
 
-        if (cuenta && Number(cuenta.saldo_pendiente) <= 0) {
-          // Cerrar sesión
+        // Solo cerrar sesión si se solicita explícitamente (ej: Mozo/Cajero libera la mesa)
+        if (cerrar_sesion && cuenta && Number(cuenta.saldo_pendiente) <= 0) {
           await supabase
             .from('sesiones_mesa')
             .update({ estado: 'CERRADA', cerrada_en: new Date().toISOString() })
             .eq('id_sesion', id_sesion);
 
-          // Obtener mesa asociada para cambiar a LIBRE
           const { data: sesionData } = await supabase
             .from('sesiones_mesa')
             .select('id_mesa, mesas(numero_mesa)')
@@ -211,7 +214,7 @@ export const CuentaService = {
       id_pago: `pago-${Date.now()}`,
       id_sesion,
       id_cajero: id_cajero ? Number(id_cajero) : null,
-      metodo_pago,
+      metodo_pago: metodoNormalizado,
       monto: Number(monto),
       propina: Number(propina) || 0.00,
       estado: 'COMPLETADO',
@@ -224,7 +227,7 @@ export const CuentaService = {
     let sesionCerrada = false;
     let mesaLiberada = cuentaActual.numero_mesa;
 
-    if (cuentaActual.saldo_pendiente <= 0) {
+    if (cerrar_sesion && cuentaActual.saldo_pendiente <= 0) {
       const sesion = mockDb.sesiones_mesa.find(s => s.id_sesion === id_sesion);
       if (sesion) {
         sesion.estado = 'CERRADA';
