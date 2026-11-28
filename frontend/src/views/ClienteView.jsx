@@ -36,6 +36,14 @@ export default function ClienteView() {
   const navigate = useNavigate();
   const { showToast, toasts, dismissToast } = useToast();
   const timerRef = useRef(null);
+  const messagesEndRef = useRef(null);
+
+  const CHIPS_INICIO_RAPIDO = [
+    'Combo para 2 con S/ 70',
+    'Algo fresco y sin picante',
+    'Platos calientes / sopas',
+    'Para compartir entre 4'
+  ];
 
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -262,6 +270,13 @@ export default function ClienteView() {
     }
     return () => clearInterval(interval);
   }, [cargando]);
+
+  // Auto-scroll automático hacia abajo en el chat con Don Lucho
+  useEffect(() => {
+    if (pestana === 'ia') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [pestana, chatMensajes, consultandoIa]);
 
   // Función para confirmar retorno de pasarela
   const confirmarRetornoDesdeUrl = async (id_pago, order_id, payment_id, status, idSesionActual) => {
@@ -675,7 +690,16 @@ export default function ClienteView() {
     } catch (err) {
       setChatMensajes(prev => [
         ...prev,
-        { remitente: 'ia', texto: '¡Disculpa causita! Tuve un cruce con la comanda. Recomiendo que pruebes el Ceviche Clásico mientras arreglo esto.' }
+        {
+          remitente: 'ia',
+          texto: '¡Aguanta sobrino! Se me cruzaron las comandas en la barra, intenta de nuevo en un segundo 🐟',
+          items_sugeridos: [],
+          preguntas_rapidas: [
+            'Combo para 2 con S/ 70',
+            'Algo fresco y sin picante',
+            'Platos calientes / sopas'
+          ]
+        }
       ]);
     } finally {
       setConsultandoIa(false);
@@ -1027,38 +1051,39 @@ export default function ClienteView() {
 
         {/* ==================== PESTAÑA 2: ASISTENTE IA ==================== */}
         {pestana === 'ia' && (
-          <div className="flex flex-col h-[70vh]">
-            <div className="bg-gradient-to-r from-ocean-800 to-ocean-700 rounded-xl p-3 mb-3 flex items-center gap-2 text-xs text-white shadow-sm">
-              <ChefHat className="w-5 h-5 text-lime-400 flex-shrink-0" />
-              <div>
-                <span className="font-bold block">Don Lucho — Maestro Cevichero 🐟</span>
-                <span className="text-ocean-200 text-[10px]">Pídeme un combo, maridaje o lo que se te antoje causa</span>
+          <div className="flex flex-col h-[calc(100vh-160px)] pb-16">
+            <div className="bg-[#0B192C] border border-slate-700/60 rounded-2xl p-3 mb-2.5 flex items-center justify-between text-xs text-white shadow-sm flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-lime-500/20 border border-[#84CC16]/40 flex items-center justify-center">
+                  <ChefHat className="w-5 h-5 text-[#84CC16]" />
+                </div>
+                <div>
+                  <span className="font-black text-sm block tracking-wide">Don Lucho</span>
+                  <span className="text-slate-300 text-[10px]">Maestro Cevichero • Barra SIN ESPINAS</span>
+                </div>
               </div>
+              <span className="text-[10px] font-bold text-[#84CC16] bg-[#84CC16]/10 px-2.5 py-0.5 rounded-full border border-[#84CC16]/30 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#84CC16] animate-pulse"></span>
+                Al toque
+              </span>
             </div>
 
-            {/* Botones rápidos */}
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar">
-              {[
-                '🍽️ Ármame algo para 2 con S/ 70',
-                '🌊 Algo fresco y sin mucho picante',
-                '🤕 Para curar la resaca'
-              ].map(sugerencia => (
+            {/* Chips de Inicio Rápido */}
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar flex-shrink-0">
+              {CHIPS_INICIO_RAPIDO.map(sugerencia => (
                 <button
                   key={sugerencia}
-                  onClick={() => {
-                    setInputIa(sugerencia);
-                    setTimeout(() => {
-                      document.getElementById('ia-form')?.requestSubmit();
-                    }, 50);
-                  }}
-                  className="whitespace-nowrap bg-ocean-100 text-ocean-800 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-ocean-200 hover:bg-ocean-200 transition flex-shrink-0"
+                  disabled={consultandoIa}
+                  onClick={() => enviarPreguntaIa(null, sugerencia)}
+                  className="whitespace-nowrap bg-ocean-50 text-ocean-900 text-[11px] font-bold px-3 py-1.5 rounded-full border border-ocean-200 hover:bg-ocean-100 transition flex-shrink-0 cursor-pointer disabled:opacity-50 active:scale-95 shadow-2xs"
                 >
-                  {sugerencia}
+                  🐟 {sugerencia}
                 </button>
               ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {/* Contenedor con scroll de mensajes */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 pb-4 min-h-0">
               {chatMensajes.map((m, idx) => (
                 <div
                   key={idx}
@@ -1067,31 +1092,78 @@ export default function ClienteView() {
                   <div
                     className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
                       m.remitente === 'usuario'
-                        ? 'bg-ocean-600 text-white rounded-tr-none'
+                        ? 'bg-ocean-600 text-white rounded-tr-none shadow-sm'
                         : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200'
                     }`}
                   >
                     {m.texto}
                   </div>
-                  {/* Tarjeta de combo sugerido por Don Lucho */}
+
+                  {/* Tarjeta de combo sugerido por Don Lucho (Paleta #0B192C y #84CC16) */}
                   {m.remitente === 'ia' && m.items_sugeridos && m.items_sugeridos.length > 0 && (
-                    <div className="mt-2 w-full max-w-[90%] bg-white border border-lime-300 rounded-2xl p-3 shadow-sm">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <Sparkles className="w-3.5 h-3.5 text-lime-600" />
-                        <span className="text-[11px] font-bold text-lime-700">Combo sugerido por Don Lucho</span>
+                    <div className="mt-2 w-full max-w-[95%] bg-[#0B192C] text-white border border-[#84CC16]/40 rounded-2xl p-3.5 shadow-lg animate-in fade-in slide-in-from-bottom-2">
+                      <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-700/80">
+                        <div className="flex items-center gap-1.5">
+                          <ChefHat className="w-4 h-4 text-[#84CC16]" />
+                          <span className="text-xs font-black tracking-wide text-white uppercase">Combo Don Lucho</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-[#84CC16] bg-[#84CC16]/10 px-2 py-0.5 rounded-full border border-[#84CC16]/30">
+                          Recomendado
+                        </span>
                       </div>
-                      <div className="space-y-1 mb-2">
+
+                      {/* Desglose de platos con botón individual + */}
+                      <div className="space-y-2 mb-3">
                         {m.items_sugeridos.map((item, i) => (
-                          <div key={i} className="flex justify-between text-xs text-slate-700">
-                            <span>{item.cantidad}x {item.nombre_plato}</span>
-                            <span className="font-semibold">S/ {Number(item.precio_unitario).toFixed(2)}</span>
+                          <div key={i} className="flex items-center justify-between gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-white truncate">
+                                  {item.cantidad}x {item.nombre_plato}
+                                </span>
+                              </div>
+                              {item.nombres_opciones && item.nombres_opciones.length > 0 && (
+                                <p className="text-[10px] text-slate-400 truncate">
+                                  {item.nombres_opciones.join(' • ')}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-xs font-bold text-[#84CC16]">
+                                S/ {Number(item.precio_unitario * (item.cantidad || 1)).toFixed(2)}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  const itemCarrito = {
+                                    id_temporal: Date.now() + Math.random(),
+                                    id_plato: item.id_plato,
+                                    nombre_plato: item.nombre_plato,
+                                    precio_base: Number(item.precio_unitario),
+                                    cantidad: 1,
+                                    opciones_ids: item.opciones_ids || [],
+                                    opciones_nombres: item.nombres_opciones || [],
+                                    observaciones_item: '',
+                                    subtotal: Number(item.precio_unitario)
+                                  };
+                                  setCarrito(prev => [...prev, itemCarrito]);
+                                  showToast('success', 'Plato agregado', `Se agregó 1x ${item.nombre_plato} al carrito`);
+                                }}
+                                className="p-1 rounded-lg bg-lime-500 hover:bg-lime-600 text-ocean-950 transition flex items-center justify-center cursor-pointer shadow-xs active:scale-95"
+                                title={`Agregar 1x ${item.nombre_plato}`}
+                              >
+                                <Plus className="w-3.5 h-3.5 font-bold stroke-[3]" />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
-                      <div className="border-t border-lime-200 pt-1.5 flex justify-between text-xs font-bold text-ocean-800">
-                        <span>Total estimado</span>
-                        <span>S/ {Number(m.total_estimado || 0).toFixed(2)}</span>
+
+                      {/* Subtotal y Botón Principal Agregar Todo */}
+                      <div className="border-t border-slate-700/80 pt-2.5 flex items-center justify-between text-xs font-bold">
+                        <span className="text-slate-300">Total estimado:</span>
+                        <span className="text-sm font-black text-white">S/ {Number(m.total_estimado || 0).toFixed(2)}</span>
                       </div>
+
                       <button
                         onClick={() => {
                           const nuevosItems = m.items_sugeridos.map(item => ({
@@ -1106,13 +1178,12 @@ export default function ClienteView() {
                             subtotal: Number(item.precio_unitario) * item.cantidad
                           }));
                           setCarrito(prev => [...prev, ...nuevosItems]);
-                          setPestana('carta');
-                          showToast('success', '🛒 Combo agregado', 'Los platos de Don Lucho fueron al carrito');
+                          showToast('success', '🛒 Combo agregado', '¡Todos los platos de Don Lucho fueron agregados al carrito!');
                         }}
-                        className="mt-2.5 w-full bg-lime-500 hover:bg-lime-600 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
+                        className="mt-2.5 w-full bg-[#84CC16] hover:bg-lime-500 text-ocean-950 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer active:scale-98"
                       >
-                        <ShoppingCart className="w-3.5 h-3.5" />
-                        Agregar todo al carrito
+                        <ShoppingCart className="w-4 h-4 stroke-[2.5]" />
+                        Agregar todo al carrito (S/ {Number(m.total_estimado || 0).toFixed(2)})
                       </button>
                     </div>
                   )}
@@ -1125,7 +1196,7 @@ export default function ClienteView() {
                           key={pIdx}
                           disabled={consultandoIa}
                           onClick={() => enviarPreguntaIa(null, pregunta)}
-                          className="bg-ocean-50 hover:bg-ocean-100 text-ocean-800 border border-ocean-200 text-[11px] font-semibold px-2.5 py-1 rounded-full transition disabled:opacity-50 text-left shadow-xs cursor-pointer"
+                          className="bg-ocean-50 hover:bg-ocean-100 text-ocean-900 border border-ocean-200 text-[11px] font-bold px-3 py-1.5 rounded-full transition disabled:opacity-50 text-left shadow-2xs cursor-pointer active:scale-95"
                         >
                           💬 {pregunta}
                         </button>
@@ -1134,30 +1205,34 @@ export default function ClienteView() {
                   )}
                 </div>
               ))}
+
               {consultandoIa && (
                 <div className="flex justify-start">
-                  <div className="bg-slate-100 text-slate-500 rounded-2xl rounded-tl-none px-4 py-2 text-xs flex items-center gap-1.5">
-                    <span className="animate-bounce">●</span>
-                    <span className="animate-bounce delay-100">●</span>
-                    <span className="animate-bounce delay-200">●</span>
-                    <span className="ml-1">Don Lucho está pensando...</span>
+                  <div className="bg-slate-100 text-slate-700 font-medium rounded-2xl rounded-tl-none px-4 py-2.5 text-xs flex items-center gap-1.5 border border-slate-200 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-ocean-600 animate-bounce"></span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-ocean-600 animate-bounce delay-100"></span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-ocean-600 animate-bounce delay-200"></span>
+                    <span className="ml-1 text-[11px] font-bold text-ocean-900">Don Lucho está alistando la comanda...</span>
                   </div>
                 </div>
               )}
+
+              {/* Elemento ancla para auto-scroll */}
+              <div ref={messagesEndRef} className="h-4 flex-shrink-0" />
             </div>
 
-            <form id="ia-form" onSubmit={enviarPreguntaIa} className="mt-3 flex gap-2">
+            <form id="ia-form" onSubmit={enviarPreguntaIa} className="pt-2 flex gap-2 flex-shrink-0 bg-white">
               <input
                 type="text"
                 value={inputIa}
                 onChange={e => setInputIa(e.target.value)}
-                placeholder="Ej: ¿Qué ceviche me recomiendas?"
-                className="flex-1 bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ocean-500"
+                placeholder="Ej: Tengo 60 soles para dos, ¿qué pido?"
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-ocean-500 font-medium placeholder:text-slate-400"
               />
               <button
                 type="submit"
                 disabled={consultandoIa || !inputIa.trim()}
-                className="bg-ocean-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-ocean-700 transition"
+                className="bg-ocean-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-ocean-800 transition cursor-pointer flex-shrink-0 shadow-sm"
               >
                 Preguntar
               </button>
