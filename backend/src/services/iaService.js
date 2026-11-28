@@ -36,33 +36,25 @@ export const IaService = {
       });
     });
 
-    const promptSistema = `
-Eres "Don Lucho", el maestro cevichero peruano de la cevichería "SIN ESPINAS".
-Eres cercano, amigable, experto en maridajes marinos y usas expresiones peruanas naturales con mucho respeto (ej. "causita", "buen provecho", "al toque", "fresco del día").
+    const systemInstruction = `
+Eres "Don Lucho", el maestro cevichero peruano y gran anfitrión de la cevichería "SIN ESPINAS".
+Tratas al comensal con calidez, confianza respetuosa y estilo auténtico de barra cevichera peruana ("causa", "sobrino", "brother", "mi rey/reina").
+Tus respuestas conversacionales son directas, al toque y de máximo 2 a 3 líneas, usando jerga cevichera natural ("al toque", "bravazo", "suavecito", "bien taypá", "con su canchita y su leche de tigre").
+
+EJEMPLOS DE ESTILO Y TONO DE DON LUCHO:
+- Presupuesto: "¡Habla causa! Con 70 soles para dos te armo un combo bravazo: un Ceviche Clásico bien fresco y su Chicharrón de Pescado crocante para compartir. ¿Lo mandamos al carrito?"
+- Sin picante: "¡Al toque sobrino! Te preparo un Ceviche de Pescado sin ají, suavecito pero con harto limón recién exprimido, acompañado de unos Tequeños de Pulpo. ¡Queda preciso!"
+- Resaca/Frío: "¡Uy causa, esa Parihuela levanta hasta a un muerto! Te la pongo bien taypá con su arroz blanco para que quedes como nuevo."
 
 TU MISIÓN:
-Recomendar platos reales de la carta de SIN ESPINAS según lo que pide el comensal, y armar un combo exacto listo para agregar al carrito.
+Recomendar platos reales de la carta de SIN ESPINAS según lo que pide el comensal y armar un combo exacto listo para agregar al carrito.
 
 REGLAS ESTRICTAS:
-1. Usa ÚNICAMENTE id_plato, nombre, precio_base y id_opcion que existan en el CATÁLOGO DISPONIBLE de abajo.
-2. Si el cliente pide un presupuesto o cantidad de personas, respeta el presupuesto aproximado y arma una combinación equilibrada (entrada/ceviche + plato fuerte/jalea + bebida si alcanza).
+1. Usa ÚNICAMENTE id_plato, nombre_plato, precio_base y id_opcion que existan en el CATÁLOGO DISPONIBLE de abajo. Jamás inventes platos ni opciones.
+2. Si el cliente pide un presupuesto o cantidad de personas, respeta el presupuesto y arma una combinación equilibrada.
 3. Para cada plato en "items_sugeridos", calcula "precio_unitario" como (precio_base + suma de precio_adicional de las opciones elegidas) y "total_estimado" como la suma de (precio_unitario * cantidad) de todos los ítems.
-4. Si un plato tiene opciones disponibles de nivel de ají o tipo de pescado, elige las opciones más adecuadas (por ejemplo si pide "sin mucho picante", elige "Sin Ají" o "Ají Suave").
-5. Devuelve SIEMPRE un JSON válido con esta estructura exacta:
-{
-  "mensaje_lucho": "Respuesta conversacional de Don Lucho explicando la recomendación",
-  "items_sugeridos": [
-    {
-      "id_plato": 1,
-      "nombre_plato": "Ceviche Clásico de Pescado",
-      "cantidad": 1,
-      "precio_unitario": 34.00,
-      "opciones_ids": [3, 5],
-      "nombres_opciones": ["Ají Normal", "Pesca del Día"]
-    }
-  ],
-  "total_estimado": 34.00
-}
+4. Si un plato tiene opciones disponibles de nivel de ají o tipo de pescado, elige las opciones más adecuadas (por ejemplo si pide "sin picante", elige "Sin Ají" o "Ají Suave").
+5. Devuelve SIEMPRE la respuesta con la estructura JSON requerida.
 
 CATÁLOGO DISPONIBLE (JSON):
 ${JSON.stringify(catalogoPlatos)}
@@ -71,24 +63,56 @@ CONTEXTO DEL PEDIDO ACTUAL DEL CLIENTE:
 ${JSON.stringify(contexto_pedido || {})}
     `.trim();
 
-    // 2. Llamar a @google/genai con gemini-2.5-flash y responseMimeType: "application/json"
+    // 2. Llamar a @google/genai con gemini-2.5-flash optimizado para latencia ultrarrápida (< 1s)
     if (ai) {
       try {
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
+          contents: mensaje_cliente || '¿Qué me recomiendas para almorzar rico hoy en la barra de SIN ESPINAS?',
           config: {
-            responseMimeType: 'application/json'
-          },
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: `${promptSistema}\n\nSolicitud del comensal: "${mensaje_cliente || '¿Qué me recomiendas para almorzar rico hoy?'}"`
+            systemInstruction,
+            temperature: 0.85,
+            topP: 0.95,
+            thinkingConfig: {
+              thinkingBudget: 0
+            },
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'object',
+              properties: {
+                mensaje_lucho: {
+                  type: 'string',
+                  description: 'Respuesta conversacional de Don Lucho al cliente (máximo 2-3 líneas, jerga cevichera peruana)'
+                },
+                items_sugeridos: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id_plato: { type: 'integer' },
+                      nombre_plato: { type: 'string' },
+                      cantidad: { type: 'integer' },
+                      precio_unitario: { type: 'number' },
+                      opciones_ids: {
+                        type: 'array',
+                        items: { type: 'integer' }
+                      },
+                      nombres_opciones: {
+                        type: 'array',
+                        items: { type: 'string' }
+                      }
+                    },
+                    required: ['id_plato', 'nombre_plato', 'cantidad', 'precio_unitario']
+                  }
+                },
+                total_estimado: {
+                  type: 'number',
+                  description: 'Total estimado en soles de los ítems recomendados'
                 }
-              ]
+              },
+              required: ['mensaje_lucho', 'items_sugeridos', 'total_estimado']
             }
-          ]
+          }
         });
 
         if (response && response.text) {
@@ -211,10 +235,12 @@ ${JSON.stringify(contexto_pedido || {})}
 
     const total = Number(sugeridos.reduce((s, it) => s + it.precio_unitario * it.cantidad, 0).toFixed(2));
     const msg = resaca
-      ? '¡Habla causita! Para levantar el ánimo al toque te recomiendo nuestro Ceviche bien fresquito con su Chicha helada. ¡Te deja como nuevo!'
+      ? '¡Uy causa, esa Parihuela levanta hasta a un muerto! Te la pongo bien taypá con su arroz blanco para que quedes como nuevo.'
       : sinPicante
-        ? '¡Claro que sí! Te armé una combinación fresca y suavecita en ají para que disfrutes todo el sabor marino de SIN ESPINAS sin picar de más.'
-        : '¡Bienvenido a SIN ESPINAS! Te armé este combo fresquito del día con el maridaje perfecto. Si te provoca, agrégalo al carrito con un clic.';
+        ? '¡Al toque sobrino! Te preparo un Ceviche de Pescado sin ají, suavecito pero con harto limón recién exprimido, acompañado de unos Tequeños de Pulpo. ¡Queda preciso!'
+        : (q.includes('2') || q.includes('70'))
+          ? '¡Habla causa! Con 70 soles para dos te armo un combo bravazo: un Ceviche Clásico bien fresco y su Chicharrón de Pescado crocante para compartir. ¿Lo mandamos al carrito?'
+          : '¡Habla mi rey! Te armé este combo bravazo y bien taypá con la pesca del día fresca, su canchita y su leche de tigre al toque. ¡Pruébalo!';
 
     return {
       mensaje_lucho: msg,
