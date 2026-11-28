@@ -636,19 +636,29 @@ export default function ClienteView() {
     }
   };
 
-  const enviarPreguntaIa = async (e) => {
-    e.preventDefault();
-    if (!inputIa.trim() || consultandoIa) return;
+  const enviarPreguntaIa = async (e, textoDirecto = null) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const textoUsuario = (textoDirecto || inputIa || '').trim();
+    if (!textoUsuario || consultandoIa) return;
 
-    const textoUsuario = inputIa;
     setInputIa('');
-    setChatMensajes(prev => [...prev, { remitente: 'usuario', texto: textoUsuario }]);
+    const nuevosMensajes = [...chatMensajes, { remitente: 'usuario', texto: textoUsuario }];
+    setChatMensajes(nuevosMensajes);
     setConsultandoIa(true);
 
     try {
       const contexto = {
-        platos_en_carrito: carrito.map(c => c.nombre_plato),
-        total_consumido: cuenta?.total_consumido || 0
+        historial_chat: nuevosMensajes.slice(-6).map(m => ({
+          rol: m.remitente === 'ia' ? 'model' : 'user',
+          texto: m.texto
+        })),
+        carrito_actual: carrito.map(c => ({
+          id_plato: c.id_plato,
+          nombre_plato: c.nombre_plato,
+          cantidad: c.cantidad,
+          subtotal: c.subtotal
+        })),
+        id_sesion: sesion?.id_sesion || null
       };
 
       const res = await api.consultarIA(textoUsuario, contexto);
@@ -656,8 +666,10 @@ export default function ClienteView() {
         setChatMensajes(prev => [...prev, {
           remitente: 'ia',
           texto: res.data.mensaje_lucho || res.data.respuesta || '¡Excelente elección, causa!',
+          accion: res.data.accion || 'SUGERIR_COMBO',
           items_sugeridos: res.data.items_sugeridos || [],
-          total_estimado: res.data.total_estimado || null
+          total_estimado: res.data.total_estimado || null,
+          preguntas_rapidas: res.data.preguntas_rapidas || []
         }]);
       }
     } catch (err) {
@@ -1102,6 +1114,22 @@ export default function ClienteView() {
                         <ShoppingCart className="w-3.5 h-3.5" />
                         Agregar todo al carrito
                       </button>
+                    </div>
+                  )}
+
+                  {/* Sugerencias Rápidas de Seguimiento */}
+                  {m.remitente === 'ia' && m.preguntas_rapidas && m.preguntas_rapidas.length > 0 && idx === chatMensajes.length - 1 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5 max-w-[95%] animate-in fade-in">
+                      {m.preguntas_rapidas.map((pregunta, pIdx) => (
+                        <button
+                          key={pIdx}
+                          disabled={consultandoIa}
+                          onClick={() => enviarPreguntaIa(null, pregunta)}
+                          className="bg-ocean-50 hover:bg-ocean-100 text-ocean-800 border border-ocean-200 text-[11px] font-semibold px-2.5 py-1 rounded-full transition disabled:opacity-50 text-left shadow-xs cursor-pointer"
+                        >
+                          💬 {pregunta}
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>

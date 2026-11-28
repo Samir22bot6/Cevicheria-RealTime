@@ -178,9 +178,23 @@ export const ResenaController = {
 export const IaController = {
   async recomendar(req, res) {
     try {
-      const { mensaje_cliente, contexto_pedido } = req.body;
-      const resultado = await IaService.recomendar({
+      const {
+        mensaje,
         mensaje_cliente,
+        historial_chat,
+        carrito_actual,
+        id_sesion,
+        contexto_pedido
+      } = req.body;
+
+      const textoMensaje = mensaje || mensaje_cliente || '';
+
+      const resultado = await IaService.recomendar({
+        mensaje: textoMensaje,
+        mensaje_cliente: textoMensaje,
+        historial_chat: Array.isArray(historial_chat) ? historial_chat : [],
+        carrito_actual: Array.isArray(carrito_actual) ? carrito_actual : (contexto_pedido?.platos_en_carrito || []),
+        id_sesion,
         contexto_pedido
       });
       return res.status(200).json({ ok: true, data: resultado });

@@ -174,11 +174,22 @@ export const api = {
     return res.json();
   },
 
-  async consultarIA(mensaje_cliente, contexto_pedido) {
+  async consultarIA(mensaje, contexto = {}) {
+    const payload = typeof mensaje === 'object' && mensaje !== null
+      ? mensaje
+      : {
+          mensaje,
+          mensaje_cliente: mensaje,
+          historial_chat: contexto.historial_chat || [],
+          carrito_actual: contexto.carrito_actual || contexto.platos_en_carrito || [],
+          id_sesion: contexto.id_sesion || null,
+          contexto_pedido: contexto
+        };
+
     const res = await fetch(`${API_BASE_URL}/ia/recomendar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mensaje_cliente, contexto_pedido })
+      body: JSON.stringify(payload)
     });
     return res.json();
   },
